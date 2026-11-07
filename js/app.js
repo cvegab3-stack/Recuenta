@@ -14,6 +14,7 @@
     { id: "devoluciones", nombre: "Devoluciones", icono: "i-devoluciones", perfiles: ["admin", "repartidor", "tienda"] },
     { id: "conciliacion", nombre: "Conciliación", icono: "i-conciliacion", perfiles: ["admin", "repartidor", "contador", "tienda"] },
     { id: "liquidacion", nombre: "Liquidación", icono: "i-liquidacion", perfiles: ["admin", "contador", "tienda"] },
+    { id: "ruta", nombre: "Mi ruta", icono: "i-ruta", perfiles: ["admin", "repartidor"] },
     { id: "dinero", nombre: "¿Dónde está mi dinero?", icono: "i-dinero", perfiles: ["admin", "contador"] },
     { id: "impacto", nombre: "Impacto económico", icono: "i-impacto", perfiles: ["admin", "contador"] },
     { id: "usuarios", nombre: "Usuarios", icono: "i-usuarios", perfiles: ["admin"] },
@@ -275,8 +276,10 @@
     var vigente = RC.actor();
     if (!vigente) { salirSinConfirmar("Tu usuario ya no está activo. Vuelve a ingresar."); return; }
     usuario = vigente;
+    limpiarMapas();
     var m = moduloActual();
     pintarNav(m);
+    pintarEtiquetaDemo();
     pintarContexto();
     document.title = m.nombre + " · ReCuenta";
     // Se reemplaza el contenedor en cada render para no acumular manejadores de eventos.
@@ -370,7 +373,7 @@
       }).join("") + "</tbody></table></div>" : vacio("i-catalogo", "Aún no hay tiendas activas", "Agrega una tienda para empezar a registrar entregas.", usuario.perfil === "admin" ? '<a class="btn btn-primario" href="#/catalogo">' + ico("i-mas") + "Agregar tienda</a>" : "");
 
     return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : (esRep ? " · tiendas de tu ruta" : " · todas las tiendas")) + ".") +
-      bandejaExcepciones() + tarjetas + tarjetaDinero() + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
+      bandejaExcepciones() + (esPerfil("admin") ? '<section class="tarjeta">' + controlDemo() + "</section>" : "") + tarjetas + tarjetaDinero() + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
   };
   // Bandeja del administrador: entregas sin GPS o fuera de rango que esperan aprobación u observación.
   function bandejaExcepciones() {
@@ -424,13 +427,15 @@
           '</td><td class="acciones"><button class="btn btn-mini' + (e.confirmada ? "" : " btn-primario") + '" data-accion="comprobante" data-id="' + e.id + '">' + (e.confirmada ? "Comprobante" : "Revisar y confirmar") + "</button></td></tr>";
       }).join("") + "</tbody></table></div>" : vacio("i-entregas", "Sin entregas en este período", "Cuando la distribuidora te entregue mercadería, aparecerá aquí.")) + "</section>";
     return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), esc(t.nombre) + " · " + esc(periodo(per).nombre) + ". La cuenta que los dos ven igual: estos son los mismos números que ve la distribuidora.") +
-      tarjetas + flujo + lista;
+      tarjetaSeguimiento() + tarjetas + flujo + lista;
   }
   function insigniaLiq(e) {
     var cls = e === "Cerrada" ? "estado-ok" : (e === "Preliminar" ? "estado-pendiente" : "estado-revisada");
     return '<span class="estado ' + cls + '">' + e + "</span>";
   }
   ENLACES.inicio = function (v) {
+    if (esPerfil("tienda")) enlazarSeguimiento(v);
+    enlazarDemo(v);
     $$(".form-excepcion", v).forEach(function (fx) {
       var modo = "aprobar";
       $$('[type="submit"]', fx).forEach(function (b) { b.addEventListener("click", function () { modo = b.dataset.modo; }); });
@@ -706,6 +711,11 @@
 
   // ---------- Ubicación del dispositivo ----------
   function obtenerUbicacion(ok, falla) {
+    var demo = RC.demo();
+    if (demo) { var p = RC.posicionDemo(demo.tiendaId); if (p) { setTimeout(function () { ok(p); }, 200); return; } }
+    obtenerUbicacionReal(ok, falla);
+  }
+  function obtenerUbicacionReal(ok, falla) {
     if (!navigator.geolocation) { falla("Este dispositivo no permite obtener la ubicación."); return; }
     navigator.geolocation.getCurrentPosition(function (p) {
       ok({ lat: p.coords.latitude, lng: p.coords.longitude, precision: p.coords.accuracy, simulada: false });
@@ -1135,6 +1145,210 @@
     });
   };
 
+  // ================= MAPAS, MI RUTA Y SEGUIMIENTO =================
+  var mapas = [];                     // mapas Leaflet de la vista actual (se eliminan al cambiar de vista)
+  var alSeguir = null;                // función de la vista actual que se llama en cada paso del seguimiento
+  var posManual = null;               // posición GPS que el repartidor capturó antes de iniciar la ruta
+  var VELOCIDAD_KMH = 20;
+  var ESTADOS_SEG = {
+    pendiente: { txt: "Sin iniciar", cls: "estado-gris" },
+    camino: { txt: "En camino", cls: "estado-revisada" },
+    cerca: { txt: "Cerca", cls: "estado-pendiente" },
+    llegando: { txt: "Llegando", cls: "estado-pendiente" },
+    tienda: { txt: "En la tienda", cls: "estado-ok" },
+    entregado: { txt: "Entregado", cls: "estado-ok" }
+  };
+  function limpiarMapas() { mapas.forEach(function (m) { try { m.remove(); } catch (e) { /* ya eliminado */ } }); mapas = []; alSeguir = null; }
+  // ajustar(m): encuadre que se aplica cuando el contenedor ya tiene su tamaño final.
+  function crearMapa(el, centro, zoom, ajustar) {
+    if (!window.L) { el.innerHTML = '<p class="ayuda">No se pudo cargar el mapa.</p>'; return null; }
+    var m = L.map(el, { zoomControl: true, attributionControl: true, fadeAnimation: false, zoomAnimation: false, markerZoomAnimation: false }).setView([centro.lat, centro.lng], zoom || 15);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
+    mapas.push(m);
+    // Solo si el mapa sigue en pantalla (la vista pudo cambiar antes).
+    setTimeout(function () { if (mapas.indexOf(m) >= 0) { m.invalidateSize({ animate: false }); if (ajustar) ajustar(m); } }, 60);
+    return m;
+  }
+  function iconoNumero(n, cls) { return L.divIcon({ className: "pin-num " + (cls || ""), html: "<span>" + n + "</span>", iconSize: [30, 30], iconAnchor: [15, 15] }); }
+  function iconoRepartidor() { return L.divIcon({ className: "pin-rep", html: '<svg class="ico"><use href="#i-entregas"/></svg>', iconSize: [36, 36], iconAnchor: [18, 18] }); }
+
+  // Estado de una tienda dentro del seguimiento, según la distancia del repartidor.
+  function estadoParada(sg, tid) {
+    var t = tienda(tid);
+    if (!sg || sg.paradas.indexOf(tid) < 0) return { clave: "pendiente", dist: null };
+    if (RC.entregadoEnRuta(sg, tid)) return { clave: "entregado", dist: RC.distancia(sg.pos, t) };
+    var d = RC.distancia(sg.pos, t);
+    if (!sg.activo) return { clave: "pendiente", dist: d };
+    return { clave: d <= 150 ? "tienda" : d <= 300 ? "llegando" : d <= 1000 ? "cerca" : "camino", dist: d };
+  }
+  function insigniaSeg(clave) { var e = ESTADOS_SEG[clave]; return '<span class="estado ' + e.cls + '">' + e.txt + "</span>"; }
+  function etaTxt(m) {
+    var min = Math.max(1, Math.round(m / 1000 / VELOCIDAD_KMH * 60)), h = new Date(Date.now() + min * 60000);
+    return String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") + " (en " + min + " min)";
+  }
+  function posicionInicial() {
+    var demo = RC.demo(), sg = RC.seguimiento();
+    if (demo) return RC.posicionDemo(demo.tiendaId);
+    if (sg && sg.activo) return sg.pos;
+    return posManual || RC.BODEGA;
+  }
+  function siguienteParada(sg) { return sg.paradas.filter(function (id) { return !RC.entregadoEnRuta(sg, id); })[0] || null; }
+
+  // ---------- Simulación: el punto avanza hacia la siguiente tienda cada 1,5 s ----------
+  var timerSeg = null;
+  function asegurarSimulacion() {
+    var sg = RC.seguimiento();
+    if (sg && sg.activo && !timerSeg) timerSeg = setInterval(pasoSimulacion, 1500);
+    if ((!sg || !sg.activo) && timerSeg) { clearInterval(timerSeg); timerSeg = null; }
+  }
+  function pasoSimulacion() {
+    var sg = RC.seguimiento();
+    if (!sg || !sg.activo) { asegurarSimulacion(); return; }
+    var sig = siguienteParada(sg);
+    if (!sig) { RC.moverSeguimiento(sg.pos, true); asegurarSimulacion(); if (alSeguir) alSeguir(); return; }
+    if (!RC.demo()) {
+      var t = tienda(sig), d = RC.distancia(sg.pos, t);
+      if (d > 50) {
+        // Pasos más cortos al acercarse, para que se vean todos los estados.
+        var paso = d > 1000 ? 250 : d > 300 ? 120 : 60, f = Math.min(1, paso / d);
+        RC.moverSeguimiento({ lat: sg.pos.lat + (t.lat - sg.pos.lat) * f, lng: sg.pos.lng + (t.lng - sg.pos.lng) * f });
+      }
+    }
+    if (alSeguir) alSeguir();
+  }
+
+  function urlGoogleMaps(pos, paradas) {
+    var pts = paradas.map(function (id) { var t = tienda(id); return t.lat + "," + t.lng; });
+    var dest = pts[pts.length - 1], way = pts.slice(0, -1).slice(0, 9);
+    return "https://www.google.com/maps/dir/?api=1&origin=" + pos.lat + "," + pos.lng + "&destination=" + dest + (way.length ? "&waypoints=" + way.join("|") : "") + "&travelmode=driving";
+  }
+
+  // Modo demostración: coloca al repartidor dentro de los 150 m de la tienda elegida.
+  function controlDemo() {
+    if (!puede("demo")) return "";
+    var demo = RC.demo();
+    return '<div class="demo-control"><label class="interruptor"><input type="checkbox" id="demo-activo"' + (demo ? " checked" : "") + '><span class="interruptor-pista"></span><span>Simular que estoy en la tienda</span></label>' +
+      '<select id="demo-tienda" aria-label="Tienda para el modo demostración">' + tiendasVisibles().filter(function (t) { return t.activa && isFinite(t.lat); }).map(function (t) {
+        return '<option value="' + t.id + '"' + (demo && demo.tiendaId === t.id ? " selected" : "") + ">" + esc(t.nombre) + "</option>";
+      }).join("") + '</select><small class="ayuda">Para presentaciones y pruebas: ubica al repartidor a unos 45 m de la tienda elegida, sin estar allí.</small></div>';
+  }
+  function enlazarDemo(v) {
+    var chk = $("#demo-activo", v), sel = $("#demo-tienda", v);
+    if (!chk) return;
+    function aplicar() {
+      try { RC.modoDemo(chk.checked, sel.value); toast(chk.checked ? "Modo demostración: repartidor en " + tienda(sel.value).nombre + "." : "Modo demostración desactivado."); render(); }
+      catch (e) { chk.checked = false; toast(e.message, "error"); }
+    }
+    chk.addEventListener("change", aplicar);
+    sel.addEventListener("change", function () { if (chk.checked) aplicar(); });
+  }
+  function pintarEtiquetaDemo() {
+    var demo = RC.demo(), el = $("#etiqueta-demo");
+    el.hidden = !demo;
+    if (demo) el.textContent = "Modo demostración · " + tienda(demo.tiendaId).nombre;
+  }
+
+  VISTAS.ruta = function () {
+    var sg = RC.seguimiento(), esRep = esPerfil("repartidor");
+    var reps = RC.usuarios().filter(function (u) { return u.perfil === "repartidor" && u.activo; });
+    var rep = esRep ? usuario : (sg ? RC.porId(RC.get().usuarios, sg.repartidorId) : reps[0]);
+    var propio = sg && rep && sg.repartidorId === rep.id;
+    var pos = propio && sg.activo ? sg.pos : posicionInicial();
+    var paradas = propio ? sg.paradas : RC.ordenarParadas(pos, rep ? rep.tiendas || [] : []);
+    var lista = paradas.map(function (id, i) {
+      var t = tienda(id), e = propio ? estadoParada(sg, id) : { clave: "pendiente", dist: RC.distancia(pos, t) };
+      return '<li class="parada" data-id="' + id + '"><span class="parada-n">' + (i + 1) + '</span><div><strong>' + esc(t.nombre) + '</strong><small class="sub">' + esc(t.direccion || "") + '</small></div><div class="parada-der"><b class="parada-dist">' + distanciaTxt(e.dist) + "</b>" + insigniaSeg(e.clave) + "</div></li>";
+    }).join("");
+    var acciones = esRep ? '<div class="ruta-acciones">' +
+      (sg && sg.activo && propio ? '<button class="btn btn-secundario" data-accion="detener-ruta">Detener ruta</button>' : '<button class="btn btn-primario" data-accion="iniciar-ruta">' + ico("i-flecha") + "Iniciar ruta</button>") +
+      '<button class="btn btn-secundario" data-accion="mi-gps">' + ico("i-ubicacion") + "Usar mi ubicación</button>" +
+      (paradas.length ? '<a class="btn btn-secundario" id="link-gmaps" target="_blank" rel="noopener" href="' + esc(urlGoogleMaps(pos, paradas)) + '">' + ico("i-ruta") + "Navegar con Google Maps</a>" : "") + "</div>" :
+      (paradas.length ? '<div class="ruta-acciones"><a class="btn btn-secundario" id="link-gmaps" target="_blank" rel="noopener" href="' + esc(urlGoogleMaps(pos, paradas)) + '">' + ico("i-ruta") + "Ver ruta en Google Maps</a></div>" : "");
+    var estadoRuta = sg && propio ? (sg.activo ? "Ruta en curso desde " + fechaHora(sg.inicio) + ". El seguimiento es simulado en este dispositivo." : (siguienteParada(sg) ? "Ruta detenida." : "Ruta completada: todas las paradas tienen entrega con firma.")) :
+      "Orden sugerido por cercanía desde " + (RC.demo() ? "la posición simulada" : posManual ? "tu ubicación" : "la bodega") + ". Google Maps calcula el camino más rápido.";
+    return encabezado(esRep ? "Mi ruta" : "Ruta del repartidor", esRep ? "Tus tiendas en el orden de visita sugerido." : "Consulta de la ruta y del seguimiento" + (rep ? " de " + esc(rep.nombre) : "") + ".") +
+      '<section class="tarjeta">' + controlDemo() + '<div class="mapa" id="mapa-ruta" role="img" aria-label="Mapa de la ruta"></div><p class="ayuda" id="ruta-estado">' + estadoRuta + "</p>" + acciones + "</section>" +
+      '<section class="tarjeta"><h2 class="tarjeta-titulo">Paradas (' + paradas.length + ")</h2>" + (paradas.length ? '<ol class="paradas">' + lista + "</ol>" : '<p class="ayuda">No hay tiendas con ubicación en esta ruta.</p>') + "</section>";
+  };
+  ENLACES.ruta = function (v) {
+    enlazarDemo(v);
+    var sg = RC.seguimiento(), esRep = esPerfil("repartidor");
+    var rep = esRep ? usuario : (sg ? RC.porId(RC.get().usuarios, sg.repartidorId) : RC.usuarios().filter(function (u) { return u.perfil === "repartidor" && u.activo; })[0]);
+    var propio = sg && rep && sg.repartidorId === rep.id;
+    var pos = propio && sg.activo ? sg.pos : posicionInicial();
+    var paradas = propio ? sg.paradas : RC.ordenarParadas(pos, rep ? rep.tiendas || [] : []);
+    var encuadre = null;
+    var m = crearMapa($("#mapa-ruta", v), pos, 14, function (mm) { if (encuadre) mm.fitBounds(encuadre, { padding: [30, 30], animate: false }); });
+    if (m) {
+      var marcador = L.marker([pos.lat, pos.lng], { icon: iconoRepartidor(), zIndexOffset: 1000 }).addTo(m).bindPopup("Repartidor");
+      var puntos = [[pos.lat, pos.lng]];
+      paradas.forEach(function (id, i) {
+        var t = tienda(id);
+        L.marker([t.lat, t.lng], { icon: iconoNumero(i + 1) }).addTo(m).bindPopup("<b>" + (i + 1) + ". " + esc(t.nombre) + "</b><br>" + esc(t.direccion || ""));
+        puntos.push([t.lat, t.lng]);
+      });
+      var linea = L.polyline(puntos, { color: "#2F5D50", weight: 4, opacity: .7, dashArray: "6 8" }).addTo(m);
+      if (puntos.length > 1) encuadre = linea.getBounds();
+      if (propio) alSeguir = function () {
+        var s = RC.seguimiento();
+        if (!s) return;
+        marcador.setLatLng([s.pos.lat, s.pos.lng]);
+        linea.setLatLngs([[s.pos.lat, s.pos.lng]].concat(s.paradas.filter(function (id) { return !RC.entregadoEnRuta(s, id); }).map(function (id) { var t = tienda(id); return [t.lat, t.lng]; })));
+        s.paradas.forEach(function (id) {
+          var li = $('.parada[data-id="' + id + '"]', v); if (!li) return;
+          var e = estadoParada(s, id);
+          $(".parada-dist", li).textContent = distanciaTxt(e.dist);
+          li.querySelector(".estado").outerHTML = insigniaSeg(e.clave);
+        });
+        var pend = s.paradas.filter(function (id) { return !RC.entregadoEnRuta(s, id); });
+        var g = $("#link-gmaps", v); if (g) g.href = urlGoogleMaps(s.pos, pend.length ? pend : s.paradas);
+        if (!s.activo) $("#ruta-estado", v).textContent = "Ruta completada: todas las paradas tienen entrega con firma.";
+      };
+    }
+    v.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-accion]");
+      if (!b) return;
+      if (b.dataset.accion === "iniciar-ruta") {
+        try { RC.iniciarRuta(posicionInicial()); toast("Ruta iniciada. La tienda puede ver dónde va el repartidor."); asegurarSimulacion(); render(); } catch (err) { toast(err.message, "error"); }
+      }
+      if (b.dataset.accion === "detener-ruta") { RC.detenerRuta(); asegurarSimulacion(); toast("Ruta detenida."); render(); }
+      if (b.dataset.accion === "mi-gps") {
+        if (RC.demo()) { toast("Desactiva el modo demostración para usar tu ubicación real.", "error"); return; }
+        b.disabled = true;
+        obtenerUbicacionReal(function (p) { posManual = p; var s = RC.seguimiento(); if (s && s.activo) RC.moverSeguimiento(p); toast("Ubicación actualizada (±" + Math.round(p.precision) + " m)."); render(); },
+          function (msg) { b.disabled = false; toast(msg, "error"); });
+      }
+    });
+  };
+
+  // Tarjeta de seguimiento en el inicio del perfil Tienda.
+  function tarjetaSeguimiento() {
+    var sg = RC.seguimiento(), tid = usuario.tiendaId;
+    if (!sg || sg.paradas.indexOf(tid) < 0) return '<section class="tarjeta seguimiento"><h2 class="tarjeta-titulo">' + ico("i-entregas") + ' Seguimiento del repartidor</h2><p class="ayuda">El repartidor aún no inicia la ruta que incluye tu tienda.</p></section>';
+    var e = estadoParada(sg, tid);
+    return '<section class="tarjeta seguimiento"><h2 class="tarjeta-titulo">' + ico("i-entregas") + " Seguimiento de " + esc(sg.repartidor) + '</h2><div class="seg-cab"><span id="seg-estado">' + insigniaSeg(e.clave) + "</span>" +
+      '<span>Distancia: <b id="seg-dist">' + distanciaTxt(e.dist) + '</b></span><span>Llegada estimada: <b id="seg-eta">' + (e.clave === "entregado" ? "entregado" : e.clave === "tienda" ? "ya está aquí" : etaTxt(e.dist)) + "</b></span></div>" +
+      '<div class="mapa mapa-chico" id="mapa-seg" role="img" aria-label="Mapa del seguimiento"></div><p class="ayuda">Seguimiento simulado en este dispositivo · velocidad urbana de ' + VELOCIDAD_KMH + " km/h.</p></section>";
+  }
+  function enlazarSeguimiento(v) {
+    var el = $("#mapa-seg", v), sg = RC.seguimiento();
+    if (!el || !sg) return;
+    var t = tienda(usuario.tiendaId);
+    var m = crearMapa(el, t, 16, function (mm) { var s = RC.seguimiento(); if (s) mm.fitBounds(L.latLngBounds([[t.lat, t.lng], [s.pos.lat, s.pos.lng]]), { padding: [40, 40], maxZoom: 16, animate: false }); });
+    if (!m) return;
+    L.marker([t.lat, t.lng], { icon: iconoNumero("★", "pin-tienda") }).addTo(m).bindPopup(esc(t.nombre));
+    var rep = L.marker([sg.pos.lat, sg.pos.lng], { icon: iconoRepartidor() }).addTo(m);
+    alSeguir = function () {
+      var s = RC.seguimiento(); if (!s) return;
+      rep.setLatLng([s.pos.lat, s.pos.lng]);
+      m.fitBounds(L.latLngBounds([[t.lat, t.lng], [s.pos.lat, s.pos.lng]]), { padding: [40, 40], maxZoom: 17, animate: false });
+      var e = estadoParada(s, usuario.tiendaId);
+      $("#seg-estado", v).innerHTML = insigniaSeg(e.clave);
+      $("#seg-dist", v).textContent = distanciaTxt(e.dist);
+      $("#seg-eta", v).textContent = e.clave === "entregado" ? "entregado" : e.clave === "tienda" ? "ya está aquí" : etaTxt(e.dist);
+    };
+  }
+
   // ================= ¿DÓNDE ESTÁ MI DINERO? (administrador y contador) =================
   function resumenDinero(per) {
     var ind = tiendasVisibles().filter(function (t) { return t.activa; }).map(function (t) { var i = RC.indicadoresTienda(t.id, per); i.tienda = t.nombre; return i; });
@@ -1467,6 +1681,7 @@
     $("#app").hidden = false;
     filtro = RC.filtro();
     render();
+    asegurarSimulacion();
   }
 
   document.addEventListener("click", function (e) {
@@ -1504,6 +1719,12 @@
     if (!$("#detalle").hidden) cerrarDetalle();
   });
   $("#detalle").addEventListener("click", function (e) { if (e.target.id === "detalle") cerrarDetalle(); });
+  // Otra pestaña del mismo navegador cambió los datos (por ejemplo, el seguimiento): se vuelven a leer.
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "recuenta.datos.v1" || !usuario) return;
+    RC.recargar(); pintarEtiquetaDemo();
+    if (alSeguir) alSeguir();
+  });
   $("#f-tienda").addEventListener("change", function (e) { cambiarFiltro({ tienda: e.target.value }); });
   $("#f-periodo").addEventListener("change", function (e) { cambiarFiltro({ periodo: e.target.value }); });
   window.addEventListener("hashchange", function () { if (usuario) { abierta = null; render(); $("#vista").focus({ preventScroll: true }); window.scrollTo(0, 0); } });

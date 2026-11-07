@@ -59,8 +59,8 @@
     admin: "Administrador", repartidor: "Repartidor", contador: "Contador", tienda: "Tienda"
   };
   var PERMISOS = {
-    admin: { catalogoVer: true, catalogoEditar: true, movimientos: true, conteo: true, revisar: true, cerrar: true, usuarios: true, bitacora: true, todasLasTiendas: true, excepciones: true },
-    repartidor: { movimientos: true, conteo: true },
+    admin: { catalogoVer: true, catalogoEditar: true, movimientos: true, conteo: true, revisar: true, cerrar: true, usuarios: true, bitacora: true, todasLasTiendas: true, excepciones: true, demo: true, verRuta: true },
+    repartidor: { movimientos: true, conteo: true, demo: true, ruta: true, verRuta: true },
     contador: { catalogoVer: true, revisar: true, cerrar: true, bitacora: true, todasLasTiendas: true },
     tienda: { confirmar: true }
   };
@@ -327,6 +327,28 @@
       var saldo = Math.max(f.esperado, 0);
       return { productoId: f.productoId, producto: nombreP(f.productoId), ventas: f.ventas, rotacion: r2(rotacion(f)), saldo: saldo, sugerido: Math.max(0, f.ventas - saldo) };
     });
+  }
+
+  // ---------- Seguimiento del repartidor (simulado en el mismo dispositivo) ----------
+  // Bodega de la distribuidora: punto de partida cuando no hay GPS.
+  var BODEGA = { lat: -2.15200, lng: -79.60200 };
+  function demoActual() { return estado.demo && estado.demo.activo ? estado.demo : null; }
+  // Posición simulada a unos 45 m de la tienda elegida (dentro del rango de 150 m).
+  function posicionDemo(tid) { var t = porId(estado.tiendas, tid); return t && isFinite(t.lat) ? { lat: t.lat + 0.0004, lng: t.lng, precision: 5, simulada: true } : null; }
+  // Orden sugerido: vecino más cercano desde la posición del repartidor.
+  function ordenarParadas(pos, ids) {
+    var pend = ids.map(function (id) { return porId(estado.tiendas, id); }).filter(function (t) { return t && t.activa && isFinite(t.lat); });
+    var orden = [], actual = pos;
+    while (pend.length) {
+      var mejor = 0;
+      for (var i = 1; i < pend.length; i++) if (distancia(actual, pend[i]) < distancia(actual, pend[mejor])) mejor = i;
+      var t = pend.splice(mejor, 1)[0];
+      orden.push(t.id); actual = t;
+    }
+    return orden;
+  }
+  function entregadoEnRuta(seg, tid) {
+    return estado.entregas.some(function (e) { return e.tiendaId === tid && e.firma && e.registradoEn && e.registradoEn >= seg.inicio; });
   }
 
   // ---------- Validaciones comunes ----------
@@ -689,6 +711,47 @@
     TIPOS_BITACORA: TIPOS_BITACORA,
     bitacora: function () { return (estado.bitacora || []).slice().sort(function (a, b) { return a.fecha < b.fecha ? 1 : (a.fecha > b.fecha ? -1 : 0); }); },
     registrar: function (tipo, detalle) { if (!TIPOS_BITACORA[tipo]) return; registrar(tipo, detalle); guardar(); },
+
+    // ---------- Seguimiento y modo demostración ----------
+    BODEGA: BODEGA, ordenarParadas: ordenarParadas, posicionDemo: posicionDemo,
+    seguimiento: function () { return estado.seguimiento || null; },
+    demo: demoActual,
+    entregadoEnRuta: entregadoEnRuta,
+    iniciarRuta: function (pos) {
+      exigir("ruta");
+      var u = actor();
+      if (!pos || !isFinite(pos.lat)) pos = BODEGA;
+      var paradas = ordenarParadas(pos, u.tiendas || []);
+      if (!paradas.length) error("Tu ruta no tiene tiendas con ubicación registrada.");
+      estado.seguimiento = { repartidorId: u.id, repartidor: u.nombre, activo: true, inicio: ahoraLocal(), pos: { lat: pos.lat, lng: pos.lng }, paradas: paradas, actualizado: ahoraLocal() };
+      registrar("entrega", "Ruta iniciada por " + u.nombre + ": " + paradas.map(nombreT).join(" → "));
+      guardar();
+      return estado.seguimiento;
+    },
+    detenerRuta: function () {
+      exigir("ruta");
+      if (estado.seguimiento) { estado.seguimiento.activo = false; registrar("entrega", "Ruta detenida por " + actor().nombre); guardar(); }
+    },
+    // Paso de la simulación: solo mueve el punto; no se registra en la bitácora.
+    moverSeguimiento: function (pos, terminada) {
+      var sg = estado.seguimiento;
+      if (!sg) return null;
+      sg.pos = { lat: pos.lat, lng: pos.lng }; sg.actualizado = ahoraLocal();
+      if (terminada) sg.activo = false;
+      guardar();
+      return sg;
+    },
+    modoDemo: function (activo, tid) {
+      exigir("demo");
+      if (activo && !posicionDemo(tid)) error("Elige una tienda con ubicación registrada.", "demoTienda");
+      estado.demo = { activo: !!activo, tiendaId: activo ? tid : "" };
+      if (activo && estado.seguimiento && estado.seguimiento.activo) estado.seguimiento.pos = posicionDemo(tid);
+      registrar("gps", activo ? "Modo demostración activado: repartidor simulado en " + nombreT(tid) : "Modo demostración desactivado");
+      guardar();
+      return estado.demo;
+    },
+    // Otra pestaña cambió los datos: se vuelven a leer.
+    recargar: function () { var c = leer(CLAVE); if (c) { try { estado = JSON.parse(c); } catch (e) { /* se conserva */ } } },
 
     indicadoresTienda: indicadoresTienda, alertasVencimiento: alertasVencimiento, sugerido: sugerido, TASA_ANUAL: TASA_ANUAL,
 
