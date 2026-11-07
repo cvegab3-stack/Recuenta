@@ -438,16 +438,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
 .interruptor input:focus-visible + .interruptor-pista { outline: 3px solid var(--ambar); outline-offset: 2px; }
 @media (max-width: 640px) { .demo-control { grid-template-columns: 1fr; } .mapa { height: 280px; } }
 
-/* ---------- Ubicación de la tienda, Próximamente, Compartir y barra inferior ---------- */
+/* ---------- Ubicación de la tienda, Próximamente y barra inferior ---------- */
 .ubic-botones { display: flex; flex-wrap: wrap; gap: 8px; }
 .ubicacion-tienda .mapa { margin: 4px 0 0; }
 .aviso-ubic { color: #6D3A00; background: var(--ambar-claro); padding: 6px 10px; border-radius: 8px; }
 .pronto { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .pronto li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--verde-100); border-radius: 10px; }
 .pronto p { margin: 4px 0 0; }
-.qr { display: grid; place-items: center; margin: 12px auto; width: min(260px, 100%); }
-.qr svg { width: 100%; height: auto; }
-.copiar { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 14px; }
 .nav-inferior { display: none; }
 .btn, .btn-mini, input, select, textarea, .btn-icono { min-height: 44px; }
 .tabla .btn-mini { min-height: 36px; }

@@ -1447,24 +1447,6 @@
       }).join("") + "</ul></section>";
   };
 
-  // ================= COMPARTIR (QR de la dirección actual) =================
-  function urlPublica() { return location.origin + location.pathname; }
-  function abrirCompartir() {
-    var url = urlPublica(), qr = "";
-    try { var q = qrcode(0, "M"); q.addData(url); q.make(); qr = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true, alt: "Código QR de " + url }); }
-    catch (e) { qr = '<p class="ayuda">No se pudo generar el código QR.</p>'; }
-    abrirDetalle('<h3 id="detalle-titulo">Compartir ReCuenta</h3><p class="ayuda">Escanea el código con la cámara del celular o copia el enlace.</p>' +
-      '<div class="qr">' + qr + '</div><div class="copiar"><input id="url-compartir" readonly value="' + esc(url) + '" aria-label="Enlace de ReCuenta">' +
-      '<button class="btn btn-primario" data-accion="copiar-enlace">Copiar enlace</button></div>' +
-      '<div class="modal-acciones"><button class="btn btn-secundario" data-accion="cerrar-detalle">Cerrar</button></div>');
-  }
-  function copiarEnlace() {
-    var inp = $("#url-compartir"), txt = inp.value;
-    function hecho() { toast("Enlace copiado."); }
-    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(txt).then(hecho, function () { inp.select(); document.execCommand("copy"); hecho(); });
-    else { inp.select(); document.execCommand("copy"); hecho(); }
-  }
-
   // ================= ¿DÓNDE ESTÁ MI DINERO? (administrador y contador) =================
   function resumenDinero(per) {
     var ind = tiendasVisibles().filter(function (t) { return t.activa; }).map(function (t) { var i = RC.indicadoresTienda(t.id, per); i.tienda = t.nombre; return i; });
@@ -1809,8 +1791,6 @@
     if (a === "cerrar-selector") $("#selector-usuario").hidden = true;
     if (a === "comprobante") abrirComprobante(b.dataset.id);
     if (a === "cerrar-detalle") cerrarDetalle();
-    if (a === "compartir") { document.body.classList.remove("menu-abierto"); abrirCompartir(); }
-    if (a === "copiar-enlace") copiarEnlace();
     if (a === "confirmar-recepcion") {
       try { RC.confirmarRecepcion(b.dataset.id); toast("Recepción confirmada. Queda registrada en la bitácora."); render(); abrirComprobante(b.dataset.id); }
       catch (err) { toast(err.message, "error"); }

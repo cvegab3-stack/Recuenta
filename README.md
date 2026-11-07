@@ -29,7 +29,7 @@ Al abrir el enlace aparece la pantalla de **Perfiles**. No hay contraseñas: pul
 
 Los permisos se aplican también en las reglas (`js/store.js`): escribir la dirección de un módulo sin permiso (por ejemplo `#/usuarios`) no lo abre.
 
-En el celular, la **barra inferior** muestra cuatro accesos según el perfil y **Más** abre el menú completo. **Compartir (QR)** muestra el código QR del enlace actual y el botón **Copiar enlace**. **Cerrar sesión** y **Restaurar datos de ejemplo** están al pie del menú.
+En el celular, la **barra inferior** muestra cuatro accesos según el perfil y **Más** abre el menú completo. **Cerrar sesión** y **Restaurar datos de ejemplo** están al pie del menú.
 
 ---
 
@@ -71,10 +71,9 @@ Con los datos de ejemplo, ¿Dónde está mi dinero? muestra $106,25 en consignac
 2. Ve a **Settings → Pages**.
 3. En **Build and deployment → Source**, elige **Deploy from a branch**.
 4. En **Branch**, elige **`main`** y la carpeta **`/(root)`**. Pulsa **Save**.
-5. Espera uno o dos minutos y recarga **Settings → Pages**. Arriba aparece **"Your site is live at…"** con el enlace (por ejemplo `https://tu-usuario.github.io/recuenta/`). Ese es el enlace para copiar y compartir; también aparece en la portada del repositorio, en **Deployments**.
-6. Dentro de la app, **Compartir (QR)** muestra el código QR de ese enlace para que lo escaneen desde el celular.
+5. Espera uno o dos minutos y recarga **Settings → Pages**. Arriba aparece **"Your site is live at…"** con el enlace (por ejemplo `https://tu-usuario.github.io/recuenta/`). Ese es el enlace público que puedes copiar; también aparece en la portada del repositorio, en **Deployments**.
 
-Todas las rutas son relativas y la navegación usa `#/modulo`, así que funciona publicada bajo `/recuenta/`. Los mapas necesitan internet (teselas de OpenStreetMap y búsqueda de Nominatim); Leaflet y la librería de QR van incluidos en `vendor/`.
+Todas las rutas son relativas y la navegación usa `#/modulo`, así que funciona publicada bajo `/recuenta/`. Los mapas necesitan internet (teselas de OpenStreetMap y búsqueda de Nominatim); Leaflet va incluido en `vendor/`.
 
 Para probar en tu computadora: `python -m http.server 8000` dentro de la carpeta y abre `http://localhost:8000`. La ubicación del dispositivo requiere `https` o `localhost`.
 
@@ -104,7 +103,6 @@ ReCuenta/
 ├── js/economia.js        Fórmulas del impacto económico
 ├── js/app.js             Vistas, navegación por perfil, mapas, CSV e impresión
 ├── vendor/leaflet/       Leaflet 1.9.4 (mapas)
-├── vendor/qrcode/        qrcode-generator 1.4.4 (código QR)
 ├── assets/               Logo, símbolo y favicon
 ├── README.md
 └── .nojekyll             Indica a GitHub Pages que publique los archivos tal cual
