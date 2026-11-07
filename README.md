@@ -82,8 +82,6 @@ Opcional: en Conciliación, **Agregar** observación → **Marcar diferencia com
 
 **Repetir el recorrido:** menú lateral → **Restaurar datos de ejemplo** → **Restaurar**. Se borran los cambios del navegador y vuelve el caso con el conteo pendiente.
 
-El guion del video está en [`GUION_VIDEO.md`](GUION_VIDEO.md).
-
 ---
 
 ## 5. Reglas de negocio implementadas
@@ -98,7 +96,7 @@ El guion del video está en [`GUION_VIDEO.md`](GUION_VIDEO.md).
 - **Validaciones:** campos obligatorios, fecha dentro del período, cantidades enteras positivas, no vender ni devolver más de lo disponible, no reducir una entrega por debajo de lo ya consumido, sin productos repetidos en una entrega y protección contra doble clic en Guardar.
 
 ### Supuestos documentados
-- Los perfiles (administrador, repartidor, contador) son los roles definidos en la ficha técnica del proyecto.
+- Los perfiles administrador, repartidor y contador son los roles definidos en la ficha técnica del proyecto. El perfil Tienda se agrega para que la tienda vea la misma cuenta que la distribuidora.
 - El ajuste pactado es un porcentaje por tienda que se descuenta del subtotal. La tienda de la demostración tiene 2 % por exhibición.
 - No se acordó un cargo por faltantes, así que el sistema solo los identifica y valora como referencia.
 - El CSV usa `;` como separador, punto decimal y codificación UTF-8, para que Excel en español lo abra en columnas.
@@ -115,7 +113,6 @@ ReCuenta/
 ├── js/store.js           Estado, almacenamiento local y reglas de consignación
 ├── js/app.js             Vistas, navegación por perfil, CSV e impresión
 ├── assets/               Logo, símbolo y favicon (SVG locales)
-├── GUION_VIDEO.md        Guion de 1:30 a 2:00 para el video
 ├── README.md
 └── .nojekyll             Indica a GitHub Pages que publique los archivos tal cual
 ```

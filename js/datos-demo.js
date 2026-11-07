@@ -3,7 +3,7 @@
  * Escenario: distribuidora de Milagro que entrega mercadería en consignación a tiendas de barrio.
  * Caso de la demostración: Minimarket Doña Rosa + Galletas de avena 200 g, noviembre de 2026.
  *   Entrega 100 u. -> ventas reportadas 70 u. -> devoluciones 25 u. -> saldo esperado 5 u.
- *   El conteo físico se deja pendiente para registrarlo en vivo durante el video.
+ *   El conteo físico se deja pendiente para registrarlo en vivo durante la presentación.
  */
 window.RC_DATOS_DEMO = function () {
   // Versión 2: agrega usuarios y bitácora. Los visitantes con datos de la versión 1 reciben este caso nuevo.

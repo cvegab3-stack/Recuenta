@@ -497,7 +497,7 @@
       var yo = actor();
       var nombre = String(r.nombre || "").trim().replace(/\s+/g, " ");
       if (nombre.length < 3 || nombre.length > 60) error("Escribe el nombre y apellido (3 a 60 caracteres).", "nombre");
-      if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]+$/.test(nombre)) error("El nombre solo admite letras, espacios, tildes, ñ, apóstrofo, punto y guion.", "nombre");
+      if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]+$/.test(nombre)) error("El nombre solo admite letras, espacios, tildes, ñ y los signos ' . -", "nombre");
       if (nombre.split(" ").filter(function (x) { return x.replace(/[.'-]/g, "").length >= 2; }).length < 2) error("Escribe nombre y apellido.", "nombre");
       var correo = String(r.correo || "").trim().toLowerCase();
       if (!/^[^\s@<>{}]+@[^\s@<>{}]+\.[a-z]{2,}$/i.test(correo)) error("Escribe un correo válido, por ejemplo nombre@empresa.com.", "correo");
