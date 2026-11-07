@@ -458,3 +458,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
   .pronto li { grid-template-columns: auto 1fr; }
   .pronto li .estado { grid-column: 2; justify-self: start; }
 }
+
+/* ---------- Inicio por perfil ---------- */
+.tarjeta-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tarjeta-cab .tarjeta-titulo { margin: 0; }
+.lista-simple { list-style: none; margin: 0; padding: 0; display: grid; }
+.lista-simple li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #EDF1EF; }
+.lista-simple li:first-child { border-top: 0; }
+.lista-simple li > span:not(.estado):not(.punto) { flex: 1; min-width: 0; }
+.lista-der { margin-left: auto; flex: none; }
+.dos-iguales { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.dos-iguales > .tarjeta { margin-bottom: 20px; min-width: 0; }
+.acciones-grandes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.btn-grande { display: grid; justify-items: center; gap: 8px; padding: 18px 10px; border-radius: var(--radio); background: var(--verde-800); color: #fff; text-decoration: none; font-weight: 700; text-align: center; box-shadow: var(--sombra); min-height: 96px; align-content: center; }
+.btn-grande:hover { background: var(--verde-900); }
+.btn-grande .ico { width: 30px; height: 30px; }
+.prox-cab { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
+.prox-nombre { font-size: 1.2rem; color: var(--verde-900); }
+.prox-der { display: grid; justify-items: end; gap: 4px; }
+.prox-der b { font-size: 1.3rem; color: var(--verde-900); }
+.monto-grande { font-size: 2.2rem; font-weight: 700; color: var(--verde-900); margin: 0 0 4px; }
+.tarjeta-pagar .btn { margin-top: 10px; }
+.ultima { display: grid; gap: 12px; }
+.ctx-fija { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--verde-900); background: var(--verde-50); border: 1px solid var(--verde-100); border-radius: 10px; padding: 8px 12px; }
+@media (max-width: 900px) { .dos-iguales { grid-template-columns: 1fr; gap: 0; } }
+@media (max-width: 640px) { .acciones-grandes { grid-template-columns: 1fr; gap: 8px; } .btn-grande { grid-auto-flow: column; justify-content: start; min-height: 60px; padding: 12px 16px; } .ctx-fija { flex: 1 1 100%; } }

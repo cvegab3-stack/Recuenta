@@ -231,6 +231,10 @@
       return '<option value="' + t.id + '"' + (t.id === filtro.tienda ? " selected" : "") + ">" + esc(t.nombre) + (t.activa ? "" : " (inactiva)") + "</option>";
     }).join("");
     st.disabled = fija;
+    st.closest(".ctx-campo").hidden = fija;
+    var fijo = $("#ctx-tienda-fija");
+    fijo.hidden = !fija;
+    if (fija) fijo.innerHTML = ico("i-tienda") + esc(tienda(usuario.tiendaId).nombre);
     sp.innerHTML = RC.periodosOrdenados().map(function (p) {
       return '<option value="' + p.id + '"' + (p.id === filtro.periodo ? " selected" : "") + ">" + esc(p.nombre) + "</option>";
     }).join("");
@@ -347,51 +351,132 @@
 
   var VISTAS = {}, ENLACES = {};
 
-  // ================= INICIO =================
+  // ================= INICIO (uno distinto por perfil) =================
   VISTAS.inicio = function () {
-    if (esPerfil("tienda")) return inicioTienda();
+    return { admin: inicioAdmin, repartidor: inicioRepartidor, contador: inicioContador, tienda: inicioTienda }[usuario.perfil]();
+  };
+  function saludo(texto) { return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), texto); }
+  function liquidacionesVisibles(per) {
+    return tiendasVisibles().filter(function (t) { return t.activa || RC.cerrado(t.id, per); }).map(function (t) { return { t: t, liq: RC.liquidacion(t.id, per) }; });
+  }
+  function totalPorCobrar(per) {
+    return liquidacionesVisibles(per).reduce(function (a, x) { return x.liq.estado === "Cerrada" ? a : RC.r2(a + x.liq.total); }, 0);
+  }
+
+  // ---------- Administrador: visión general ----------
+  function inicioAdmin() {
     var per = filtro.periodo;
     var tiendas = tiendasVisibles().filter(function (t) { return t.activa && (!filtro.tienda || t.id === filtro.tienda); });
     var filas = filasVisibles(per);
     var unidades = filas.reduce(function (a, f) { return a + Math.max(f.esperado, 0); }, 0);
     var difs = filas.filter(function (f) { return f.estado === "diferencia"; }).length;
     var pend = filas.filter(function (f) { return f.estado === "pendiente"; }).length;
-    var porCobrar = 0;
-    var resumen = tiendas.map(function (t) {
-      var liq = RC.liquidacion(t.id, per);
-      var fs = filas.filter(function (f) { return f.tiendaId === t.id; });
-      if (liq.estado !== "Cerrada") porCobrar = RC.r2(porCobrar + liq.total);
-      return { t: t, liq: liq, unidades: fs.reduce(function (a, f) { return a + Math.max(f.esperado, 0); }, 0),
-        pend: fs.filter(function (f) { return f.estado === "pendiente"; }).length,
-        difs: fs.filter(function (f) { return f.estado === "diferencia"; }).length, movs: fs.length };
-    });
-    var tot = { e: 0, v: 0, d: 0 };
-    filas.forEach(function (f) { tot.e += f.entregas; tot.v += f.ventas; tot.d += f.devoluciones; });
-
-    var esRep = esPerfil("repartidor");
-    var tarjetas =
-      '<div class="kpis">' +
-      kpi(esRep ? "Tiendas de tu ruta" : "Tiendas activas", tiendas.length, filtro.tienda ? "Filtrada por la tienda activa" : (esRep ? "Asignadas a tu usuario" : "Con consignación en el período"), "catalogo", "i-catalogo") +
-      kpi("Unidades en consignación", num(unidades), "Saldo esperado en las tiendas", "conciliacion", "i-entregas", "") +
+    var porCobrar = tiendas.reduce(function (a, t) { var l = RC.liquidacion(t.id, per); return l.estado === "Cerrada" ? a : RC.r2(a + l.total); }, 0);
+    var kpis = '<div class="kpis">' +
+      kpi("Tiendas activas", tiendas.length, filtro.tienda ? "Filtrada por la tienda activa" : "Con consignación en el período", "catalogo", "i-catalogo") +
+      kpi("Unidades en consignación", num(unidades), "Saldo esperado en las tiendas", "conciliacion", "i-entregas") +
       kpi("Diferencias por revisar", difs, pend + " producto(s) pendientes de conteo", "conciliacion", "i-alerta", difs ? "kpi-alerta" : "", "diferencia") +
-      kpi("Total por cobrar", usd(porCobrar), "Ventas reportadas sin liquidación cerrada", "liquidacion", "i-liquidacion", "kpi-dinero") +
-      "</div>";
+      kpi("Total por cobrar", usd(porCobrar), "Ventas reportadas sin liquidación cerrada", "liquidacion", "i-liquidacion", "kpi-dinero") + "</div>";
+    var sem = tiendasVisibles().filter(function (t) { return t.activa; }).map(function (t) { var i = RC.indicadoresTienda(t.id, per); i.tienda = t.nombre; return i; });
+    var semaforo = '<section class="tarjeta"><div class="tarjeta-cab"><h2 class="tarjeta-titulo">Semáforo de tiendas</h2><a class="btn btn-mini" href="#/dinero">Ver detalle ' + ico("i-flecha") + "</a></div>" +
+      '<ul class="lista-simple">' + sem.map(function (i) {
+        return '<li><span class="punto punto-' + i.color + '"></span><strong>' + esc(i.tienda) + '</strong><span class="sub">' + i.recomendacion + "</span><b class='lista-der'>" + num(Math.round(i.puntaje)) + "</b></li>";
+      }).join("") + "</ul></section>";
+    var bit = RC.bitacora().slice(0, 5);
+    var bitacora = '<section class="tarjeta"><div class="tarjeta-cab"><h2 class="tarjeta-titulo">Últimas acciones</h2><a class="btn btn-mini" href="#/bitacora">Ver bitácora ' + ico("i-flecha") + "</a></div>" +
+      '<ul class="lista-simple">' + bit.map(function (b) {
+        return '<li><span class="estado ' + (b.tipo === "gps" ? "estado-alerta" : "estado-revisada") + '">' + (RC.TIPOS_BITACORA[b.tipo] || b.tipo) + "</span><span>" + esc(b.detalle) + '<small class="sub">' + fechaHora(b.fecha) + " · " + esc(b.usuario) + "</small></span></li>";
+      }).join("") + "</ul></section>";
+    return saludo("Visión general de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : " · todas las tiendas") + ".") +
+      kpis + bandejaExcepciones() + '<div class="dos-iguales">' + semaforo + bitacora + "</div>" + '<section class="tarjeta">' + controlDemo() + "</section>";
+  }
 
-    var flujo = '<section class="tarjeta"><h2 class="tarjeta-titulo">Recorrido de la consignación · ' + esc(periodo(per).nombre) + '</h2><div class="flujo">' +
-      paso("1", "Entrega", num(tot.e) + " u.", "entregas") + paso("2", "Venta reportada", num(tot.v) + " u.", "ventas") +
-      paso("3", "Devolución", num(tot.d) + " u.", "devoluciones") + paso("4", "Conciliación", difs + " por revisar", "conciliacion") +
-      paso("5", "Liquidación", usd(porCobrar), "liquidacion") + "</div></section>";
+  // ---------- Repartidor: Mi día ----------
+  function proximaParada() {
+    var sg = RC.seguimiento();
+    if (sg && sg.repartidorId === usuario.id && sg.activo) { var sig = siguienteParada(sg); return sig ? { tid: sig, sg: sg } : null; }
+    var orden = RC.ordenarParadas(posicionInicial(), usuario.tiendas || []);
+    return orden.length ? { tid: orden[0], sg: null } : null;
+  }
+  function inicioRepartidor() {
+    var per = filtro.periodo, prox = proximaParada(), sg = RC.seguimiento();
+    var activa = sg && sg.activo && sg.repartidorId === usuario.id;
+    var cardProx;
+    if (prox) {
+      var t = tienda(prox.tid), e = prox.sg ? estadoParada(prox.sg, prox.tid) : { clave: "pendiente", dist: RC.distancia(posicionInicial(), t) };
+      cardProx = '<section class="tarjeta proxima"><h2 class="tarjeta-titulo">Próxima parada</h2><div class="prox-cab"><div><strong class="prox-nombre">' + esc(t.nombre) + '</strong><small class="sub">' + esc(t.direccion || "") + "</small></div>" +
+        '<div class="prox-der"><span id="prox-estado">' + insigniaSeg(e.clave) + '</span><b id="prox-dist">' + distanciaTxt(e.dist) + "</b></div></div>" +
+        '<div class="ruta-acciones">' + (activa ? "" : '<button class="btn btn-primario" data-accion="iniciar-ruta">' + ico("i-flecha") + "Iniciar ruta</button>") +
+        '<a class="btn btn-secundario" href="#/ruta">' + ico("i-ruta") + "Ver Mi ruta</a></div></section>";
+    } else cardProx = '<section class="tarjeta proxima"><h2 class="tarjeta-titulo">Próxima parada</h2><p class="ayuda">' + (activa || (sg && sg.repartidorId === usuario.id) ? "Ruta completada: todas tus paradas tienen entrega con firma." : "No tienes tiendas con ubicación asignadas.") + '</p><a class="btn btn-secundario" href="#/ruta">' + ico("i-ruta") + "Ver Mi ruta</a></section>";
+    var acciones = '<div class="acciones-grandes">' +
+      '<a class="btn-grande" href="#/entregas">' + ico("i-entregas") + "<span>Registrar entrega</span></a>" +
+      '<a class="btn-grande" href="#/ventas">' + ico("i-ventas") + "<span>Registrar venta</span></a>" +
+      '<a class="btn-grande" href="#/devoluciones">' + ico("i-devoluciones") + "<span>Registrar devolución</span></a></div>";
+    var pend = filasVisibles(per).filter(function (f) { return f.estado === "pendiente"; });
+    var conteos = '<section class="tarjeta"><h2 class="tarjeta-titulo">Pendientes de conteo (' + pend.length + ")</h2>" + (pend.length ? '<ul class="lista-simple">' + pend.map(function (f) {
+      return "<li><span><strong>" + esc(tienda(f.tiendaId).nombre) + "</strong><small class='sub'>" + esc(producto(f.productoId).nombre) + " · se esperan " + num(f.esperado) + ' u.</small></span><button class="btn btn-mini lista-der" data-accion="ver-tienda" data-id="' + f.tiendaId + '">Contar ' + ico("i-flecha") + "</button></li>";
+    }).join("") + "</ul>" : '<p class="ayuda">No tienes conteos pendientes en ' + esc(periodo(per).nombre) + ".</p>") + "</section>";
+    var sug = prox ? '<section class="tarjeta"><h2 class="tarjeta-titulo">Reposición sugerida · ' + esc(tienda(prox.tid).nombre) + "</h2>" + htmlSugerido(prox.tid, false) +
+      '<div class="form-acciones"><button class="btn btn-primario" data-accion="entregar-en" data-id="' + prox.tid + '">' + ico("i-entregas") + "Registrar entrega aquí</button></div></section>" : "";
+    return saludo("Mi día · " + (usuario.tiendas || []).length + " tienda(s) en tu ruta · " + esc(periodo(per).nombre) + ".") + cardProx + acciones + sug + conteos;
+  }
 
-    var tabla = resumen.length ? '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Tienda</th><th class="num">Unidades en tienda</th><th class="num">Pendientes de conteo</th><th class="num">Diferencias</th><th class="num">Por cobrar</th><th>Liquidación</th><th></th></tr></thead><tbody>' +
-      resumen.map(function (r) {
-        return "<tr><td><strong>" + esc(r.t.nombre) + "</strong><small class='sub'>" + esc(r.t.direccion) + "</small></td><td class='num'>" + num(r.unidades) + "</td><td class='num'>" + r.pend +
-          "</td><td class='num'>" + (r.difs ? '<span class="estado estado-alerta">' + r.difs + "</span>" : "0") + "</td><td class='num'>" + usd(r.liq.total) + "</td><td>" + insigniaLiq(r.liq.estado) +
-          '</td><td class="acciones"><button class="btn btn-mini" data-accion="ver-tienda" data-id="' + r.t.id + '">Conciliar ' + ico("i-flecha") + "</button></td></tr>";
-      }).join("") + "</tbody></table></div>" : vacio("i-catalogo", "Aún no hay tiendas activas", "Agrega una tienda para empezar a registrar entregas.", usuario.perfil === "admin" ? '<a class="btn btn-primario" href="#/catalogo">' + ico("i-mas") + "Agregar tienda</a>" : "");
+  // ---------- Contador ----------
+  function inicioContador() {
+    var per = filtro.periodo;
+    var filas = filasVisibles(per), difs = filas.filter(function (f) { return f.estado === "diferencia"; });
+    var liqs = liquidacionesVisibles(per).filter(function (x) { return !filtro.tienda || x.t.id === filtro.tienda; });
+    var porCobrar = liqs.reduce(function (a, x) { return x.liq.estado === "Cerrada" ? a : RC.r2(a + x.liq.total); }, 0);
+    var dinero = resumenDinero(per);
+    var kpis = '<div class="kpis">' +
+      kpi("Diferencias por revisar", difs.length, "Faltantes y sobrantes con conteo", "conciliacion", "i-alerta", difs.length ? "kpi-alerta" : "", "diferencia") +
+      kpi("Total por cobrar", usd(porCobrar), "Liquidaciones no cerradas", "liquidacion", "i-liquidacion", "kpi-dinero") +
+      kpi("Capital inmovilizado", usd(dinero.capital), "Costo de oportunidad " + usd(dinero.costo) + "/mes", "dinero", "i-dinero") +
+      kpi("Ventaja de ReCuenta", usd(RCE.simular(6).ventaja) + "/año", "Ver impacto económico", "impacto", "i-impacto") + "</div>";
+    var listaDifs = '<section class="tarjeta"><div class="tarjeta-cab"><h2 class="tarjeta-titulo">Diferencias por revisar</h2><a class="btn btn-mini" href="#/conciliacion" data-accion="ir-diferencias">Ir a Conciliación ' + ico("i-flecha") + "</a></div>" +
+      (difs.length ? '<ul class="lista-simple">' + difs.map(function (f) {
+        var p = producto(f.productoId), val = RC.r2(Math.abs(f.diferencia) * RC.precioEn(p, per));
+        return "<li><span><strong>" + esc(tienda(f.tiendaId).nombre) + "</strong><small class='sub'>" + esc(p.nombre) + " · " + (f.diferencia < 0 ? "faltan " + (-f.diferencia) : "sobran " + f.diferencia) + " u. · valor referencial " + usd(val) + '</small></span><button class="btn btn-mini lista-der" data-accion="revisar-tienda" data-id="' + f.tiendaId + '">Revisar</button></li>';
+      }).join("") + "</ul>" : '<p class="ayuda">No hay diferencias por revisar.</p>') + "</section>";
+    var tabla = '<section class="tarjeta"><h2 class="tarjeta-titulo">Liquidaciones · ' + esc(periodo(per).nombre) + '</h2><div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Tienda</th><th>Estado</th><th class="num">Total</th><th></th></tr></thead><tbody>' +
+      liqs.map(function (x) {
+        return "<tr><td><strong>" + esc(x.t.nombre) + "</strong></td><td>" + insigniaLiq(x.liq.estado) + "</td><td class='num'>" + usd(x.liq.total) + '</td><td class="acciones"><button class="btn btn-mini" data-accion="ver-liq" data-id="' + x.t.id + '">Ver ' + ico("i-flecha") + "</button></td></tr>";
+      }).join("") + "</tbody></table></div></section>";
+    return saludo("Cuentas de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : " · todas las tiendas") + ".") +
+      kpis + listaDifs + tabla + tarjetaDinero();
+  }
 
-    return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : (esRep ? " · tiendas de tu ruta" : " · todas las tiendas")) + ".") +
-      bandejaExcepciones() + (esPerfil("admin") ? '<section class="tarjeta">' + controlDemo() + "</section>" : "") + tarjetas + tarjetaDinero() + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
-  };
+  // ---------- Tienda: solo su cuenta ----------
+  function inicioTienda() {
+    var d = RC.get(), per = filtro.periodo, tid = usuario.tiendaId, t = tienda(tid);
+    var filas = RC.filasConciliacion(tid, per);
+    var liq = RC.liquidacion(tid, per);
+    var merc = '<section class="tarjeta"><h2 class="tarjeta-titulo">Tu mercadería en consignación</h2>' + (filas.length ?
+      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Producto</th><th class="num">En tu tienda</th><th class="num">Recibidas</th><th class="num">Vendidas</th><th class="num">Devueltas</th></tr></thead><tbody>' +
+      filas.map(function (f) { return "<tr><td>" + esc(producto(f.productoId).nombre) + "</td><td class='num'><b>" + num(Math.max(f.esperado, 0)) + "</b></td><td class='num'>" + num(f.inicial + f.entregas) + "</td><td class='num'>" + num(f.ventas) + "</td><td class='num'>" + num(f.devoluciones) + "</td></tr>"; }).join("") +
+      "</tbody></table></div>" : '<p class="ayuda">No tienes mercadería en consignación en este período.</p>') + "</section>";
+    var ult = d.entregas.filter(function (e) { return e.tiendaId === tid; }).sort(function (a, b) { return (a.fecha + (a.registradoEn || "")) < (b.fecha + (b.registradoEn || "")) ? 1 : -1; })[0];
+    var entrega = '<section class="tarjeta"><h2 class="tarjeta-titulo">Última entrega</h2>' + (ult ?
+      '<div class="ultima"><div><strong>' + fecha(ult.fecha) + "</strong> · " + num(ult.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0)) + " u.<small class='sub'>" +
+      ult.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " × " + num(l.cantidad); }).join(", ") + "</small><div>" + insigniasRecepcion(ult) + "</div></div>" +
+      '<div class="ruta-acciones"><button class="btn btn-secundario" data-accion="comprobante" data-id="' + ult.id + '">Ver comprobante</button>' +
+      (ult.confirmada ? "" : '<button class="btn btn-primario" data-accion="confirmar-recepcion" data-id="' + ult.id + '">' + ico("i-ok") + "Confirmar recepción</button>") + "</div></div>" :
+      '<p class="ayuda">Aún no tienes entregas.</p>') + "</section>";
+    var pagar = '<section class="tarjeta tarjeta-pagar"><h2 class="tarjeta-titulo">' + (liq.estado === "Cerrada" ? "Liquidación cerrada" : "Total a pagar") + " · " + esc(periodo(per).nombre) + "</h2>" +
+      '<p class="monto-grande">' + usd(liq.total) + "</p><p class='ayuda'>" + num(liq.lineas.reduce(function (a, x) { return a + x.cantidad; }, 0)) + " u. vendidas · " + insigniaLiq(liq.estado) + "</p>" +
+      '<a class="btn btn-secundario" href="#/liquidacion">Ver mi liquidación ' + ico("i-flecha") + "</a></section>";
+    var difs = filas.filter(function (f) { return f.diferencia !== null && f.diferencia !== 0; });
+    var pendientes = filas.filter(function (f) { return f.estado === "pendiente"; });
+    var difHtml = '<section class="tarjeta"><div class="tarjeta-cab"><h2 class="tarjeta-titulo">Tus diferencias</h2><a class="btn btn-mini" href="#/conciliacion">Ver conciliación ' + ico("i-flecha") + "</a></div>" +
+      (difs.length || pendientes.length ? '<ul class="lista-simple">' + difs.map(function (f) {
+        return "<li><span><strong>" + esc(producto(f.productoId).nombre) + "</strong><small class='sub'>" + (f.diferencia < 0 ? "Faltan " + (-f.diferencia) : "Sobran " + f.diferencia) + " u. · no se cobran: se revisan contigo</small></span>" + insignia(f.estado) + "</li>";
+      }).join("") + pendientes.map(function (f) { return "<li><span><strong>" + esc(producto(f.productoId).nombre) + "</strong><small class='sub'>Se esperan " + num(f.esperado) + " u. en tu tienda</small></span>" + insignia("pendiente") + "</li>"; }).join("") + "</ul>" :
+        '<p class="ayuda">Tu cuenta está al día: el conteo coincide con lo esperado.</p>') + "</section>";
+    return saludo(esc(t.nombre) + " · " + esc(periodo(per).nombre) + ". La cuenta que los dos ven igual: estos son los mismos números que ve la distribuidora.") +
+      tarjetaSeguimiento() + '<div class="dos-iguales">' + pagar + entrega + "</div>" + merc + difHtml;
+  }
+
   // Bandeja del administrador: entregas sin GPS o fuera de rango que esperan aprobación u observación.
   function bandejaExcepciones() {
     if (!puede("excepciones")) return "";
@@ -407,44 +492,11 @@
           '<div class="form-acciones"><button class="btn btn-secundario" type="submit" data-modo="observar">Observar</button><button class="btn btn-primario" type="submit" data-modo="aprobar">' + ico("i-ok") + "Aprobar</button></div></form>";
       }).join("") + "</section>";
   }
+  // Indicador del inicio: si el perfil no puede abrir el módulo de destino, no se muestra.
   function kpi(t, v, s, destino, icono, cls, estado) {
-    var permitido = moduloPermitido(destino);
-    return '<button class="kpi ' + (cls || "") + '" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '" data-estado="' + (estado || "") + '"' : "disabled") + '>' +
+    if (!moduloPermitido(destino)) return "";
+    return '<button class="kpi ' + (cls || "") + '" data-accion="ir" data-destino="' + destino + '" data-estado="' + (estado || "") + '">' +
       '<span class="kpi-ico">' + ico(icono) + '</span><span class="kpi-txt"><span class="kpi-titulo">' + t + '</span><span class="kpi-valor">' + v + '</span><span class="kpi-sub">' + s + "</span></span></button>";
-  }
-  function paso(n, t, v, destino) {
-    var permitido = moduloPermitido(destino);
-    return '<button class="paso" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '"' : "disabled") + '><span class="paso-n">' + n + "</span><span><b>" + t + "</b><small>" + v + "</small></span></button>";
-  }
-
-  // Inicio del perfil Tienda: la misma cuenta que ve la distribuidora, solo de su tienda.
-  function inicioTienda() {
-    var d = RC.get(), per = filtro.periodo, tid = usuario.tiendaId, t = tienda(tid);
-    var filas = RC.filasConciliacion(tid, per);
-    var liq = RC.liquidacion(tid, per);
-    var tot = { e: 0, v: 0, d: 0, saldo: 0 };
-    filas.forEach(function (f) { tot.e += f.entregas; tot.v += f.ventas; tot.d += f.devoluciones; tot.saldo += Math.max(f.esperado, 0); });
-    var difs = filas.filter(function (f) { return f.estado === "diferencia"; }).length;
-    var entregas = d.entregas.filter(function (e) { return e.tiendaId === tid && e.periodo === per; }).sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; });
-    var tarjetas = '<div class="kpis">' +
-      kpi("Mercadería en tu tienda", num(tot.saldo) + " u.", "Saldo esperado en consignación", "conciliacion", "i-entregas") +
-      kpi("Ventas reportadas", num(tot.v) + " u.", "Base de lo que pagas", "ventas", "i-ventas") +
-      kpi("Diferencias por revisar", difs, difs ? "Se revisan contigo antes de cobrar" : "Tu cuenta está al día", "conciliacion", "i-alerta", difs ? "kpi-alerta" : "") +
-      kpi(liq.estado === "Cerrada" ? "Liquidación cerrada" : "Total a pagar", usd(liq.total), liq.estado === "Cerrada" ? "Cerrada el " + fecha(liq.fechaCierre) : "Liquidación " + liq.estado.toLowerCase(), "liquidacion", "i-liquidacion", "kpi-dinero") +
-      "</div>";
-    var flujo = '<section class="tarjeta"><h2 class="tarjeta-titulo">Tu cuenta de consignación · ' + esc(periodo(per).nombre) + '</h2><div class="flujo">' +
-      paso("1", "Recibiste", num(tot.e) + " u.", "entregas") + paso("2", "Vendiste", num(tot.v) + " u.", "ventas") +
-      paso("3", "Devolviste", num(tot.d) + " u.", "devoluciones") + paso("4", "Conciliación", difs + " por revisar", "conciliacion") +
-      paso("5", "A pagar", usd(liq.total), "liquidacion") + "</div></section>";
-    var lista = '<section class="tarjeta"><h2 class="tarjeta-titulo">Entregas recibidas</h2>' + (entregas.length ?
-      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Productos</th><th class="num">Unidades</th><th>Recepción</th><th></th></tr></thead><tbody>' +
-      entregas.map(function (e) {
-        return "<tr><td>" + fecha(e.fecha) + "</td><td>" + e.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " <b>× " + num(l.cantidad) + "</b>"; }).join("<br>") +
-          "</td><td class='num'>" + num(e.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0)) + "</td><td>" + insigniasRecepcion(e) +
-          '</td><td class="acciones"><button class="btn btn-mini' + (e.confirmada ? "" : " btn-primario") + '" data-accion="comprobante" data-id="' + e.id + '">' + (e.confirmada ? "Comprobante" : "Revisar y confirmar") + "</button></td></tr>";
-      }).join("") + "</tbody></table></div>" : vacio("i-entregas", "Sin entregas en este período", "Cuando la distribuidora te entregue mercadería, aparecerá aquí.")) + "</section>";
-    return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), esc(t.nombre) + " · " + esc(periodo(per).nombre) + ". La cuenta que los dos ven igual: estos son los mismos números que ve la distribuidora.") +
-      tarjetaSeguimiento() + tarjetas + flujo + lista;
   }
   function insigniaLiq(e) {
     var cls = e === "Cerrada" ? "estado-ok" : (e === "Preliminar" ? "estado-pendiente" : "estado-revisada");
@@ -453,6 +505,16 @@
   ENLACES.inicio = function (v) {
     if (esPerfil("tienda")) enlazarSeguimiento(v);
     enlazarDemo(v);
+    // Repartidor: la próxima parada se actualiza con el seguimiento.
+    if (esPerfil("repartidor")) {
+      var mostrada = (proximaParada() || {}).tid;
+      alSeguir = function () {
+        var p = proximaParada();
+        if (!p || p.tid !== mostrada) { render(); return; }
+        var e = p.sg ? estadoParada(p.sg, p.tid) : null;
+        if (e) { $("#prox-estado", v).innerHTML = insigniaSeg(e.clave); $("#prox-dist", v).textContent = distanciaTxt(e.dist); }
+      };
+    }
     $$(".form-excepcion", v).forEach(function (fx) {
       var modo = "aprobar";
       $$('[type="submit"]', fx).forEach(function (b) { b.addEventListener("click", function () { modo = b.dataset.modo; }); });
@@ -472,6 +534,13 @@
       if (!b) return;
       if (b.dataset.accion === "ir") { if (b.dataset.estado) filtroEstado = b.dataset.estado; irA(b.dataset.destino); }
       if (b.dataset.accion === "ver-tienda") { filtroEstado = ""; irA("conciliacion", { tienda: b.dataset.id }); }
+      if (b.dataset.accion === "revisar-tienda") { filtroEstado = "diferencia"; irA("conciliacion", { tienda: b.dataset.id }); }
+      if (b.dataset.accion === "ir-diferencias") filtroEstado = "diferencia";
+      if (b.dataset.accion === "ver-liq") irA("liquidacion", { tienda: b.dataset.id });
+      if (b.dataset.accion === "entregar-en") irA("entregas", { tienda: b.dataset.id });
+      if (b.dataset.accion === "iniciar-ruta") {
+        try { RC.iniciarRuta(posicionInicial()); toast("Ruta iniciada. La tienda puede ver dónde va el repartidor."); asegurarSimulacion(); render(); } catch (err) { toast(err.message, "error"); }
+      }
     });
   };
 
@@ -905,7 +974,7 @@
       '<div class="firma-ver"><span class="sub">Firma</span>' + (e.firma ? '<img src="' + e.firma + '" alt="Firma de ' + esc(e.recibidoPor || "quien recibe") + '">' : '<p class="ayuda">Registro de ejemplo sin firma digital.</p>') + "</div>" +
       '<div class="modal-acciones">' +
       (esPerfil("tienda") && !e.confirmada ? '<button class="btn btn-primario" data-accion="confirmar-recepcion" data-id="' + e.id + '">' + ico("i-ok") + "Confirmar recepción</button>" : "") +
-      '<a class="btn btn-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoComprobante(e))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>" +
+      (esPerfil("tienda") ? "" : '<a class="btn btn-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoComprobante(e))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>") +
       '<button class="btn btn-secundario" data-accion="cerrar-detalle">Cerrar</button></div>';
     abrirDetalle(html);
   }
@@ -1139,13 +1208,13 @@
       }).join("") + "</tbody></table></div><p class='ayuda'>Los faltantes no se cobran automáticamente: se revisan con la tienda antes de decidir si son pérdida, error de registro o venta no reportada.</p>" :
       '<p class="ayuda">' + (l.pendientes.length ? "Todavía no hay conteos que comparar." : "Sin diferencias: el conteo físico coincide con el saldo esperado.") + "</p>") +
       (l.pendientes.length ? '<div class="nota nota-alerta">' + ico("i-alerta") + "Pendiente de conteo: " + l.pendientes.map(function (p) { return esc(p.producto) + " (se esperan " + p.esperado + " u.)"; }).join(", ") +
-        '. <a href="#/conciliacion">Registrar conteo</a></div>' : "") + "</section>";
+        '.' + (puede("conteo") ? ' <a href="#/conciliacion">Registrar conteo</a>' : "") + '</div>' : "") + "</section>";
 
     var motivo = l.estado === "Preliminar" ? "Hay conteos pendientes o diferencias sin revisar: la liquidación es preliminar." : (l.estado === "Cerrada" ? "Liquidación cerrada: importes y precios quedan fijos aunque cambie el catálogo." : "Todo está conciliado o revisado. Ya se puede cerrar.");
     var acciones = '<div class="liq-acciones">' +
       '<button class="btn btn-secundario" data-accion="csv"' + (l.lineas.length ? "" : " disabled") + ">" + ico("i-descargar") + "Exportar CSV</button>" +
       '<button class="btn btn-secundario" data-accion="imprimir"' + (l.lineas.length ? "" : " disabled") + ">" + ico("i-imprimir") + "Imprimir / PDF</button>" +
-      (l.lineas.length ? '<a class="btn btn-whatsapp" id="liq-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoLiquidacion(l))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>" : "") +
+      (l.lineas.length && !esPerfil("tienda") ? '<a class="btn btn-whatsapp" id="liq-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoLiquidacion(l))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>" : "") +
       (puede("cerrar") && l.estado !== "Cerrada" ? '<button class="btn btn-primario" data-accion="cerrar-liq"' + (l.estado === "Lista para cerrar" && l.lineas.length ? "" : ' disabled title="' + esc(motivo) + '"') + ">" + ico("i-candado") + "Cerrar liquidación</button>" : "") +
       "</div>";
 
@@ -1498,11 +1567,11 @@
   }
 
   // Sugerido de reposición en Entregas.
-  function htmlSugerido(t) {
+  function htmlSugerido(t, conBoton) {
     var s = RC.sugerido(t, filtro.periodo);
     if (!s.length) return '<p class="ayuda sugerido">Sin historial de ventas de esta tienda en el período: no hay sugerido de reposición.</p>';
     var hay = s.some(function (x) { return x.sugerido > 0; });
-    return '<div class="sugerido"><div class="sugerido-cab"><strong>Sugerido de reposición</strong>' + (hay ? '<button type="button" class="btn btn-mini btn-primario" data-accion="usar-sugerencia">Usar sugerencia</button>' : "") + "</div>" +
+    return '<div class="sugerido"><div class="sugerido-cab"><strong>Sugerido de reposición</strong>' + (hay && conBoton !== false ? '<button type="button" class="btn btn-mini btn-primario" data-accion="usar-sugerencia">Usar sugerencia</button>' : "") + "</div>" +
       '<div class="tabla-envoltura"><table class="tabla tabla-mini"><thead><tr><th>Producto</th><th class="num">Vendidas</th><th class="num">Rotación</th><th class="num">Saldo</th><th class="num">Sugerido</th></tr></thead><tbody>' +
       s.map(function (x) { return "<tr><td>" + esc(x.producto) + "</td><td class='num'>" + num(x.ventas) + "</td><td class='num'>" + num(x.rotacion) + " %</td><td class='num'>" + num(x.saldo) + "</td><td class='num'><b>" + num(x.sugerido) + "</b></td></tr>"; }).join("") +
       '</tbody></table></div><small class="ayuda">Sugerido = máx(0, vendidas − saldo). Rotación = vendidas ÷ (inicial + entregas).</small></div>';
