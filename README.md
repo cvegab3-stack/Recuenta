@@ -46,13 +46,20 @@ Todas las rutas son relativas (`css/…`, `js/…`, `assets/…`) y la navegaci�
 
 ## 3. Acceso de demostración
 
-Al abrir el enlace aparece la pantalla de **Perfiles**. Pulsa **Ingresar** en el perfil deseado o usa **"Ingresar con correo y contraseña de demostración"**:
+Al abrir el enlace aparece la pantalla de **Perfiles**. No hay contraseñas: pulsa **Ingresar** en el perfil deseado. Si el perfil tiene un solo usuario activo, entras directo. Si tiene varios, eliges el tuyo en una lista. Si no tiene ninguno, aparece un aviso.
 
-| Perfil | Correo | Contraseña | Puede usar |
-|---|---|---|---|
-| Administrador | `admin@recuenta.demo` | `admin123` | Todo: catálogo, movimientos, conciliación, liquidación y cierre |
-| Repartidor | `repartidor@recuenta.demo` | `ruta123` | Inicio, entregas, ventas, devoluciones y conteo físico |
-| Contador | `contador@recuenta.demo` | `cuenta123` | Inicio, catálogo (consulta), conciliación (revisión de diferencias) y liquidación |
+| Perfil | Usuario de ejemplo | Puede usar |
+|---|---|---|
+| Administrador | Andrea Salazar | Todo: catálogo, movimientos, conciliación, liquidación y cierre, **Usuarios** y **Bitácora** |
+| Repartidor | Jorge Cedeño | Inicio, entregas, ventas, devoluciones y conteo físico, **solo de las tiendas de su ruta** (T1, T2 y T3) |
+| Contador | María Torres | Inicio, catálogo (consulta), conciliación (revisión de diferencias), liquidación y bitácora |
+| Tienda | Rosa Mendoza | Consulta de **su tienda** (Minimarket Doña Rosa): entregas, ventas, devoluciones, conciliación y liquidación |
+
+Los permisos se aplican también en las reglas (`store.js`): escribir la dirección de un módulo sin permiso (por ejemplo `#/usuarios`) no lo abre.
+
+**Usuarios** (administrador): crea, edita y activa o desactiva usuarios. Un repartidor necesita al menos una tienda en su ruta y un usuario Tienda necesita su tienda vinculada. Siempre queda al menos un administrador activo, y nadie puede desactivarse ni cambiarse el perfil a sí mismo. Un usuario nuevo aparece de inmediato en la pantalla de acceso.
+
+**Bitácora** (administrador y contador): registra cada acción con fecha y hora, usuario, tipo y detalle. Se filtra por tipo y por usuario.
 
 **Cerrar sesión** está al pie del menú lateral (en el celular, en el menú ☰).
 

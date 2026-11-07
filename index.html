@@ -34,6 +34,9 @@
     <symbol id="i-candado" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="i-cerrar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-flecha" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-tienda" viewBox="0 0 24 24"><path d="M3 9l2-5h14l2 5"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8h14v-8"/><path d="M10 20v-5h4v5"/></symbol>
+    <symbol id="i-usuarios" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14a5 5 0 0 1 4.5 5"/></symbol>
+    <symbol id="i-bitacora" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
   </svg>
 
   <div id="aviso-almacenamiento" class="aviso-global" hidden>
@@ -49,7 +52,7 @@
       <h1 id="acceso-titulo" class="acceso-titulo">Perfiles</h1>
       <p class="acceso-sub">Selecciona tu perfil para iniciar sesión en</p>
       <img class="acceso-logo" src="assets/recuenta-logo.svg" alt="ReCuenta. Cada entrega, cada venta, cada cuenta" width="340" height="84">
-      <p class="acceso-desc">Distribuidores, repartidores y contadores · Gestión de mercadería en consignación</p>
+      <p class="acceso-desc">La cuenta que los dos ven igual · Gestión de mercadería en consignación</p>
 
       <div class="perfiles">
         <article class="perfil">
@@ -70,25 +73,14 @@
           <p>Revisa diferencias, genera la liquidación y la exporta para cobrar.</p>
           <button class="btn btn-primario" data-accion="entrar" data-perfil="contador">Ingresar</button>
         </article>
+        <article class="perfil">
+          <svg class="perfil-ico"><use href="#i-tienda"/></svg>
+          <h2>Tienda</h2>
+          <p>Mira tu cuenta igual que la distribuidora: entregas, ventas y lo que debes pagar.</p>
+          <button class="btn btn-primario" data-accion="entrar" data-perfil="tienda">Ingresar</button>
+        </article>
       </div>
-
-      <details class="acceso-credenciales">
-        <summary>Ingresar con correo y contraseña de demostración</summary>
-        <form id="form-login" class="form-login" novalidate>
-          <label>Correo <input name="correo" type="email" autocomplete="username" required placeholder="admin@recuenta.demo"></label>
-          <label>Contraseña <input name="clave" type="password" autocomplete="current-password" required placeholder="admin123"></label>
-          <button class="btn btn-primario" type="submit">Iniciar sesión</button>
-          <p class="error-form" id="login-error" role="alert"></p>
-        </form>
-        <table class="tabla tabla-mini">
-          <thead><tr><th>Perfil</th><th>Correo</th><th>Contraseña</th></tr></thead>
-          <tbody>
-            <tr><td>Administrador</td><td>admin@recuenta.demo</td><td>admin123</td></tr>
-            <tr><td>Repartidor</td><td>repartidor@recuenta.demo</td><td>ruta123</td></tr>
-            <tr><td>Contador</td><td>contador@recuenta.demo</td><td>cuenta123</td></tr>
-          </tbody>
-        </table>
-      </details>
+      <p class="error-form acceso-aviso" id="acceso-aviso" role="alert"></p>
       <p class="acceso-nota">Demostración académica con datos ficticios. Los cambios se guardan solo en este navegador.</p>
     </div>
   </section>
@@ -133,6 +125,17 @@
       <div class="modal-acciones">
         <button class="btn btn-secundario" id="modal-no">Cancelar</button>
         <button class="btn btn-primario" id="modal-si">Confirmar</button>
+      </div>
+    </div>
+  </div>
+  <!-- Selector de usuario cuando un perfil tiene varios usuarios activos -->
+  <div id="selector-usuario" class="modal" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="selector-titulo">
+      <h3 id="selector-titulo">Elige tu usuario</h3>
+      <p id="selector-texto">Hay varios usuarios activos con este perfil.</p>
+      <div id="selector-lista" class="selector-lista"></div>
+      <div class="modal-acciones">
+        <button class="btn btn-secundario" data-accion="cerrar-selector">Cancelar</button>
       </div>
     </div>
   </div>

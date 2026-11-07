@@ -5,28 +5,18 @@
 (function () {
   "use strict";
 
-  // ---------------- Usuarios de demostración ----------------
-  var USUARIOS = {
-    admin: { perfil: "admin", nombre: "Andrea Salazar", rol: "Administrador", correo: "admin@recuenta.demo", clave: "admin123" },
-    repartidor: { perfil: "repartidor", nombre: "Jorge Cedeño", rol: "Repartidor", correo: "repartidor@recuenta.demo", clave: "ruta123" },
-    contador: { perfil: "contador", nombre: "María Torres", rol: "Contador", correo: "contador@recuenta.demo", clave: "cuenta123" }
-  };
-
+  // Módulos y perfiles que pueden abrirlos. Las acciones dentro de cada módulo las decide RC.puede (store.js).
   var MODULOS = [
-    { id: "inicio", nombre: "Inicio", icono: "i-inicio", perfiles: ["admin", "repartidor", "contador"] },
+    { id: "inicio", nombre: "Inicio", icono: "i-inicio", perfiles: ["admin", "repartidor", "contador", "tienda"] },
     { id: "catalogo", nombre: "Tiendas y productos", icono: "i-catalogo", perfiles: ["admin", "contador"] },
-    { id: "entregas", nombre: "Entregas", icono: "i-entregas", perfiles: ["admin", "repartidor"] },
-    { id: "ventas", nombre: "Ventas", icono: "i-ventas", perfiles: ["admin", "repartidor"] },
-    { id: "devoluciones", nombre: "Devoluciones", icono: "i-devoluciones", perfiles: ["admin", "repartidor"] },
-    { id: "conciliacion", nombre: "Conciliación", icono: "i-conciliacion", perfiles: ["admin", "repartidor", "contador"] },
-    { id: "liquidacion", nombre: "Liquidación", icono: "i-liquidacion", perfiles: ["admin", "contador"] }
+    { id: "entregas", nombre: "Entregas", icono: "i-entregas", perfiles: ["admin", "repartidor", "tienda"] },
+    { id: "ventas", nombre: "Ventas", icono: "i-ventas", perfiles: ["admin", "repartidor", "tienda"] },
+    { id: "devoluciones", nombre: "Devoluciones", icono: "i-devoluciones", perfiles: ["admin", "repartidor", "tienda"] },
+    { id: "conciliacion", nombre: "Conciliación", icono: "i-conciliacion", perfiles: ["admin", "repartidor", "contador", "tienda"] },
+    { id: "liquidacion", nombre: "Liquidación", icono: "i-liquidacion", perfiles: ["admin", "contador", "tienda"] },
+    { id: "usuarios", nombre: "Usuarios", icono: "i-usuarios", perfiles: ["admin"] },
+    { id: "bitacora", nombre: "Bitácora", icono: "i-bitacora", perfiles: ["admin", "contador"] }
   ];
-  // Acciones permitidas por perfil
-  var PERMISOS = {
-    admin: { catalogoEditar: true, movimientos: true, conteo: true, revisar: true, cerrar: true },
-    repartidor: { catalogoEditar: false, movimientos: true, conteo: true, revisar: false, cerrar: false },
-    contador: { catalogoEditar: false, movimientos: false, conteo: true, revisar: true, cerrar: true }
-  };
 
   var CONDICIONES = { apta: "Apta para reventa", danada: "Dañada", vencida: "Vencida" };
   var ESTADOS = {
@@ -40,7 +30,8 @@
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
   var usuario = null;
   var filtro = null;
-  var edicion = { entregas: null, ventas: null, devoluciones: null, tienda: null, producto: null };
+  var edicion = { entregas: null, ventas: null, devoluciones: null, tienda: null, producto: null, usuario: null };
+  var filtroBitacora = { tipo: "", usuario: "" };
   var pestanaCatalogo = "tiendas";
   var filtroEstado = "";
   var abierta = null; // fila de conciliación con observación abierta
@@ -55,7 +46,14 @@
   function tienda(id) { return RC.porId(RC.get().tiendas, id) || { nombre: "(eliminada)" }; }
   function producto(id) { return RC.porId(RC.get().productos, id) || { nombre: "(eliminado)" }; }
   function periodo(id) { return RC.porId(RC.get().periodos, id) || { nombre: id }; }
-  function puede(accion) { return !!PERMISOS[usuario.perfil][accion]; }
+  function puede(accion) { return RC.puede(accion); }
+  function rol(u) { return RC.PERFILES[(u || usuario).perfil]; }
+  function esPerfil(p) { return usuario && usuario.perfil === p; }
+  // ¿El registro de esta tienda entra en la vista actual? (filtro de la barra + tiendas permitidas del usuario)
+  function enFiltro(tid) { return filtro.tienda ? tid === filtro.tienda : RC.puedeVerTienda(tid); }
+  function tiendasVisibles() { return RC.get().tiendas.filter(function (t) { return RC.puedeVerTienda(t.id); }); }
+  function filasVisibles(per) { return RC.filasConciliacion(filtro.tienda, per).filter(function (f) { return RC.puedeVerTienda(f.tiendaId); }); }
+  function moduloPermitido(id) { var m = MODULOS.filter(function (x) { return x.id === id; })[0]; return !!(m && usuario && m.perfiles.indexOf(usuario.perfil) >= 0); }
   function fechaPorDefecto(per) {
     var hoy = new Date();
     var h = hoy.getFullYear() + "-" + String(hoy.getMonth() + 1).padStart(2, "0") + "-" + String(hoy.getDate()).padStart(2, "0");
@@ -123,26 +121,45 @@
   }
 
   // ---------------- Sesión ----------------
+  // Ingresar con un perfil: uno solo entra directo; varios abren el selector; ninguno muestra un aviso.
   function entrar(perfil) {
-    usuario = USUARIOS[perfil];
-    RC.iniciarSesion({ perfil: perfil });
-    location.hash = "#/inicio";
-    arrancar();
+    var aviso = $("#acceso-aviso");
+    aviso.textContent = "";
+    var lista = RC.usuariosActivos(perfil);
+    if (!lista.length) { aviso.textContent = "No hay usuarios activos con el perfil " + RC.PERFILES[perfil] + ". Pide al administrador que cree o active uno."; return; }
+    if (lista.length === 1) { entrarComo(lista[0].id); return; }
+    $("#selector-titulo").textContent = "Elige tu usuario · " + RC.PERFILES[perfil];
+    $("#selector-texto").textContent = "Hay " + lista.length + " usuarios activos con este perfil.";
+    $("#selector-lista").innerHTML = lista.map(function (u) {
+      var extra = u.perfil === "tienda" ? tienda(u.tiendaId).nombre : (u.perfil === "repartidor" ? (u.tiendas || []).length + " tienda(s) en su ruta" : u.correo);
+      return '<button class="selector-usuario" data-accion="entrar-como" data-id="' + u.id + '"><span class="avatar">' + ico("i-" + u.perfil) + "</span><span><strong>" + esc(u.nombre) + "</strong><small>" + esc(extra) + "</small></span></button>";
+    }).join("");
+    $("#selector-usuario").hidden = false;
+    var b = $(".selector-usuario"); if (b) b.focus();
+  }
+  function entrarComo(id) {
+    try { usuario = RC.iniciarSesion(id); } catch (e) { $("#acceso-aviso").textContent = e.message; return; }
+    $("#selector-usuario").hidden = true;
+    Object.keys(edicion).forEach(function (k) { edicion[k] = null; });
+    abierta = null; filtroEstado = "";
+    if (location.hash === "#/inicio") arrancar(); else { location.hash = "#/inicio"; arrancar(); }
   }
   function salir() {
     RC.cerrarSesion();
     usuario = null;
-    location.hash = "";
+    history.replaceState(null, "", location.pathname + location.search);
     arrancar();
   }
+  function salirSinConfirmar(msg) { salir(); if (msg) $("#acceso-aviso").textContent = msg; }
 
   // ---------------- Contexto (tienda y período activos) ----------------
   function pintarContexto() {
-    var d = RC.get();
     var st = $("#f-tienda"), sp = $("#f-periodo");
-    st.innerHTML = '<option value="">Todas las tiendas</option>' + d.tiendas.map(function (t) {
+    var fija = esPerfil("tienda");
+    st.innerHTML = (fija ? "" : '<option value="">' + (esPerfil("repartidor") ? "Todas mis tiendas" : "Todas las tiendas") + "</option>") + tiendasVisibles().map(function (t) {
       return '<option value="' + t.id + '"' + (t.id === filtro.tienda ? " selected" : "") + ">" + esc(t.nombre) + (t.activa ? "" : " (inactiva)") + "</option>";
     }).join("");
+    st.disabled = fija;
     sp.innerHTML = RC.periodosOrdenados().map(function (p) {
       return '<option value="' + p.id + '"' + (p.id === filtro.periodo ? " selected" : "") + ">" + esc(p.nombre) + "</option>";
     }).join("");
@@ -159,17 +176,24 @@
   }
 
   // ---------------- Navegación ----------------
+  // Un módulo sin permiso no se abre aunque se escriba en la dirección: se avisa y se vuelve a Inicio.
   function moduloActual() {
     var id = (location.hash || "").replace(/^#\/?/, "").split("?")[0] || "inicio";
     var m = MODULOS.filter(function (x) { return x.id === id; })[0];
-    if (!m || m.perfiles.indexOf(usuario.perfil) < 0) return MODULOS[0];
+    if (!m) { if (location.hash && location.hash !== "#/inicio") history.replaceState(null, "", "#/inicio"); return MODULOS[0]; }
+    if (m.perfiles.indexOf(usuario.perfil) < 0) {
+      toast("Tu perfil (" + rol() + ") no tiene acceso a «" + m.nombre + "».", "error");
+      history.replaceState(null, "", "#/inicio");
+      return MODULOS[0];
+    }
     return m;
   }
   function pintarNav(actual) {
     $("#nav").innerHTML = MODULOS.filter(function (m) { return m.perfiles.indexOf(usuario.perfil) >= 0; }).map(function (m) {
       return '<a class="btn-nav' + (m.id === actual.id ? " activo" : "") + '" href="#/' + m.id + '"' + (m.id === actual.id ? ' aria-current="page"' : "") + ">" + ico(m.icono) + "<span>" + m.nombre + "</span></a>";
     }).join("");
-    $("#usuario").innerHTML = '<div class="avatar">' + ico("i-" + usuario.perfil) + "</div><div><strong>" + esc(usuario.nombre) + "</strong><small>" + usuario.rol + "</small></div>";
+    var extra = esPerfil("tienda") ? " · " + tienda(usuario.tiendaId).nombre : "";
+    $("#usuario").innerHTML = '<div class="avatar">' + ico("i-" + usuario.perfil) + "</div><div><strong>" + esc(usuario.nombre) + "</strong><small>" + esc(rol() + extra) + "</small></div>";
   }
   function irA(mod, cambios) {
     if (cambios) { filtro = Object.assign({}, filtro, cambios); RC.guardarFiltro(filtro); }
@@ -178,6 +202,10 @@
 
   function render() {
     if (!usuario) return;
+    // Si el usuario fue desactivado o borrado (por ejemplo, al restaurar los datos), se cierra la sesión.
+    var vigente = RC.actor();
+    if (!vigente) { salirSinConfirmar("Tu usuario ya no está activo. Vuelve a ingresar."); return; }
+    usuario = vigente;
     var m = moduloActual();
     pintarNav(m);
     pintarContexto();
@@ -198,7 +226,7 @@
   }
   function insignia(est) { var e = ESTADOS[est]; return '<span class="estado ' + e.cls + '">' + e.txt + "</span>"; }
   function opcionesTiendas(sel, soloActivas) {
-    return '<option value="">Selecciona…</option>' + RC.get().tiendas.filter(function (t) { return !soloActivas || t.activa || t.id === sel; }).map(function (t) {
+    return '<option value="">Selecciona…</option>' + tiendasVisibles().filter(function (t) { return !soloActivas || t.activa || t.id === sel; }).map(function (t) {
       return '<option value="' + t.id + '"' + (t.id === sel ? " selected" : "") + ">" + esc(t.nombre) + "</option>";
     }).join("");
   }
@@ -232,9 +260,10 @@
 
   // ================= INICIO =================
   VISTAS.inicio = function () {
-    var d = RC.get(), per = filtro.periodo;
-    var tiendas = d.tiendas.filter(function (t) { return t.activa && (!filtro.tienda || t.id === filtro.tienda); });
-    var filas = RC.filasConciliacion(filtro.tienda, per);
+    if (esPerfil("tienda")) return inicioTienda();
+    var per = filtro.periodo;
+    var tiendas = tiendasVisibles().filter(function (t) { return t.activa && (!filtro.tienda || t.id === filtro.tienda); });
+    var filas = filasVisibles(per);
     var unidades = filas.reduce(function (a, f) { return a + Math.max(f.esperado, 0); }, 0);
     var difs = filas.filter(function (f) { return f.estado === "diferencia"; }).length;
     var pend = filas.filter(function (f) { return f.estado === "pendiente"; }).length;
@@ -250,9 +279,10 @@
     var tot = { e: 0, v: 0, d: 0 };
     filas.forEach(function (f) { tot.e += f.entregas; tot.v += f.ventas; tot.d += f.devoluciones; });
 
+    var esRep = esPerfil("repartidor");
     var tarjetas =
       '<div class="kpis">' +
-      kpi("Tiendas activas", tiendas.length, filtro.tienda ? "Filtrada por la tienda activa" : "Con consignación en el período", "catalogo", "i-catalogo") +
+      kpi(esRep ? "Tiendas de tu ruta" : "Tiendas activas", tiendas.length, filtro.tienda ? "Filtrada por la tienda activa" : (esRep ? "Asignadas a tu usuario" : "Con consignación en el período"), "catalogo", "i-catalogo") +
       kpi("Unidades en consignación", num(unidades), "Saldo esperado en las tiendas", "conciliacion", "i-entregas", "") +
       kpi("Diferencias por revisar", difs, pend + " producto(s) pendientes de conteo", "conciliacion", "i-alerta", difs ? "kpi-alerta" : "", "diferencia") +
       kpi("Total por cobrar", usd(porCobrar), "Ventas reportadas sin liquidación cerrada", "liquidacion", "i-liquidacion", "kpi-dinero") +
@@ -270,19 +300,47 @@
           '</td><td class="acciones"><button class="btn btn-mini" data-accion="ver-tienda" data-id="' + r.t.id + '">Conciliar ' + ico("i-flecha") + "</button></td></tr>";
       }).join("") + "</tbody></table></div>" : vacio("i-catalogo", "Aún no hay tiendas activas", "Agrega una tienda para empezar a registrar entregas.", usuario.perfil === "admin" ? '<a class="btn btn-primario" href="#/catalogo">' + ico("i-mas") + "Agregar tienda</a>" : "");
 
-    return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : " · todas las tiendas") + ".") +
+    return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : (esRep ? " · tiendas de tu ruta" : " · todas las tiendas")) + ".") +
       tarjetas + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
-
-    function kpi(t, v, s, destino, icono, cls, estado) {
-      var permitido = MODULOS.filter(function (m) { return m.id === destino; })[0].perfiles.indexOf(usuario.perfil) >= 0;
-      return '<button class="kpi ' + (cls || "") + '" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '" data-estado="' + (estado || "") + '"' : "disabled") + '>' +
-        '<span class="kpi-ico">' + ico(icono) + '</span><span class="kpi-txt"><span class="kpi-titulo">' + t + '</span><span class="kpi-valor">' + v + '</span><span class="kpi-sub">' + s + "</span></span></button>";
-    }
-    function paso(n, t, v, destino) {
-      var permitido = MODULOS.filter(function (m) { return m.id === destino; })[0].perfiles.indexOf(usuario.perfil) >= 0;
-      return '<button class="paso" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '"' : "disabled") + '><span class="paso-n">' + n + "</span><span><b>" + t + "</b><small>" + v + "</small></span></button>";
-    }
   };
+  function kpi(t, v, s, destino, icono, cls, estado) {
+    var permitido = moduloPermitido(destino);
+    return '<button class="kpi ' + (cls || "") + '" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '" data-estado="' + (estado || "") + '"' : "disabled") + '>' +
+      '<span class="kpi-ico">' + ico(icono) + '</span><span class="kpi-txt"><span class="kpi-titulo">' + t + '</span><span class="kpi-valor">' + v + '</span><span class="kpi-sub">' + s + "</span></span></button>";
+  }
+  function paso(n, t, v, destino) {
+    var permitido = moduloPermitido(destino);
+    return '<button class="paso" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '"' : "disabled") + '><span class="paso-n">' + n + "</span><span><b>" + t + "</b><small>" + v + "</small></span></button>";
+  }
+
+  // Inicio del perfil Tienda: la misma cuenta que ve la distribuidora, solo de su tienda.
+  function inicioTienda() {
+    var d = RC.get(), per = filtro.periodo, tid = usuario.tiendaId, t = tienda(tid);
+    var filas = RC.filasConciliacion(tid, per);
+    var liq = RC.liquidacion(tid, per);
+    var tot = { e: 0, v: 0, d: 0, saldo: 0 };
+    filas.forEach(function (f) { tot.e += f.entregas; tot.v += f.ventas; tot.d += f.devoluciones; tot.saldo += Math.max(f.esperado, 0); });
+    var difs = filas.filter(function (f) { return f.estado === "diferencia"; }).length;
+    var entregas = d.entregas.filter(function (e) { return e.tiendaId === tid && e.periodo === per; }).sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; });
+    var tarjetas = '<div class="kpis">' +
+      kpi("Mercadería en tu tienda", num(tot.saldo) + " u.", "Saldo esperado en consignación", "conciliacion", "i-entregas") +
+      kpi("Ventas reportadas", num(tot.v) + " u.", "Base de lo que pagas", "ventas", "i-ventas") +
+      kpi("Diferencias por revisar", difs, difs ? "Se revisan contigo antes de cobrar" : "Tu cuenta está al día", "conciliacion", "i-alerta", difs ? "kpi-alerta" : "") +
+      kpi(liq.estado === "Cerrada" ? "Liquidación cerrada" : "Total a pagar", usd(liq.total), liq.estado === "Cerrada" ? "Cerrada el " + fecha(liq.fechaCierre) : "Liquidación " + liq.estado.toLowerCase(), "liquidacion", "i-liquidacion", "kpi-dinero") +
+      "</div>";
+    var flujo = '<section class="tarjeta"><h2 class="tarjeta-titulo">Tu cuenta de consignación · ' + esc(periodo(per).nombre) + '</h2><div class="flujo">' +
+      paso("1", "Recibiste", num(tot.e) + " u.", "entregas") + paso("2", "Vendiste", num(tot.v) + " u.", "ventas") +
+      paso("3", "Devolviste", num(tot.d) + " u.", "devoluciones") + paso("4", "Conciliación", difs + " por revisar", "conciliacion") +
+      paso("5", "A pagar", usd(liq.total), "liquidacion") + "</div></section>";
+    var lista = '<section class="tarjeta"><h2 class="tarjeta-titulo">Entregas recibidas</h2>' + (entregas.length ?
+      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Productos</th><th class="num">Unidades</th></tr></thead><tbody>' +
+      entregas.map(function (e) {
+        return "<tr><td>" + fecha(e.fecha) + "</td><td>" + e.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " <b>× " + num(l.cantidad) + "</b>"; }).join("<br>") +
+          "</td><td class='num'>" + num(e.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0)) + "</td></tr>";
+      }).join("") + "</tbody></table></div>" : vacio("i-entregas", "Sin entregas en este período", "Cuando la distribuidora te entregue mercadería, aparecerá aquí.")) + "</section>";
+    return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), esc(t.nombre) + " · " + esc(periodo(per).nombre) + ". La cuenta que los dos ven igual: estos son los mismos números que ve la distribuidora.") +
+      tarjetas + flujo + lista;
+  }
   function insigniaLiq(e) {
     var cls = e === "Cerrada" ? "estado-ok" : (e === "Preliminar" ? "estado-pendiente" : "estado-revisada");
     return '<span class="estado ' + cls + '">' + e + "</span>";
@@ -412,7 +470,7 @@
     var lineas = ed ? ed.lineas : [{ productoId: "", cantidad: "" }];
     var r = rangoPeriodo(per);
     var bloqueado = tSel && RC.cerrado(tSel, per);
-    var lista = d.entregas.filter(function (e) { return e.periodo === per && (!filtro.tienda || e.tiendaId === filtro.tienda); })
+    var lista = d.entregas.filter(function (e) { return e.periodo === per && enFiltro(e.tiendaId); })
       .sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; });
 
     var form = puede("movimientos") ? '<form class="tarjeta form" id="form-entrega" novalidate><h2 class="tarjeta-titulo">' + (ed ? "Corregir entrega" : "Registrar entrega") + "</h2>" +
@@ -499,7 +557,7 @@
     var tSel = ed ? ed.tiendaId : filtro.tienda;
     var r = rangoPeriodo(per);
     var bloqueado = tSel && RC.cerrado(tSel, per);
-    var lista = d[tipo].filter(function (x) { return x.periodo === per && (!filtro.tienda || x.tiendaId === filtro.tienda); })
+    var lista = d[tipo].filter(function (x) { return x.periodo === per && enFiltro(x.tiendaId); })
       .sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; });
     var titulo = esVenta ? "Ventas reportadas" : "Devoluciones";
     var texto = esVenta ? "Unidades que cada tienda informa como vendidas. Son la base de la liquidación." : "Unidades que el repartidor retira de la tienda. Cada unidad se descuenta una sola vez del saldo y no se cobra a la tienda.";
@@ -586,7 +644,7 @@
   // ================= CONCILIACIÓN =================
   VISTAS.conciliacion = function () {
     var per = filtro.periodo;
-    var filas = RC.filasConciliacion(filtro.tienda, per);
+    var filas = filasVisibles(per);
     var cuenta = { pendiente: 0, conciliado: 0, diferencia: 0, revisada: 0 };
     filas.forEach(function (f) { cuenta[f.estado]++; });
     var visibles = filas.filter(function (f) { return !filtroEstado || f.estado === filtroEstado; });
@@ -602,7 +660,9 @@
         var conteo = (puede("conteo") && !cerr) ?
           '<form class="form-conteo" data-k="' + k + '" novalidate><input name="conteo" type="number" min="0" step="1" inputmode="numeric" aria-label="Conteo físico" value="' + (f.conteo === null ? "" : f.conteo) + '" placeholder="—"><button class="btn btn-mini btn-primario" type="submit">Guardar</button></form>' : num(f.conteo);
         var devDet = f.devoluciones ? '<small class="sub">' + [f.devAptas ? f.devAptas + " aptas" : "", f.devDanadas ? f.devDanadas + " dañadas" : "", f.devVencidas ? f.devVencidas + " vencidas" : ""].filter(Boolean).join(" · ") + "</small>" : "";
-        var obs = f.conteo === null ? '<span class="sub">Registra el conteo</span>' :
+        var editaObs = puede("conteo") || puede("revisar");
+        var obs = f.conteo === null ? '<span class="sub">' + (puede("conteo") ? "Registra el conteo" : "Conteo pendiente") + "</span>" :
+          !editaObs ? (f.observacion ? '<small class="sub obs-txt">' + esc(f.observacion) + "</small>" : "") :
           '<button class="btn btn-mini" data-accion="obs" data-k="' + k + '">' + ico("i-editar") + (f.observacion ? "Ver / editar" : "Agregar") + "</button>" + (f.observacion ? '<small class="sub obs-txt">' + esc(f.observacion) + "</small>" : "");
         var html = "<tr class='" + (f.estado === "diferencia" ? "fila-alerta" : "") + "'>" + (filtro.tienda ? "" : "<td>" + esc(tienda(f.tiendaId).nombre) + "</td>") + "<td class='nombre'>" + esc(producto(f.productoId).nombre) + "</td><td class='num'>" + num(f.inicial) + "</td><td class='num'>" + num(f.entregas) +
           "</td><td class='num'>" + num(f.ventas) + "</td><td class='num'>" + num(f.devoluciones) + devDet + "</td><td class='num'><b>" + num(f.esperado) + "</b></td><td class='num'>" + conteo + "</td><td class='num'>" + dif +
@@ -666,7 +726,7 @@
   VISTAS.liquidacion = function () {
     var per = filtro.periodo;
     if (!filtro.tienda) {
-      var ts = RC.get().tiendas.filter(function (t) { return t.activa || RC.cerrado(t.id, per); });
+      var ts = tiendasVisibles().filter(function (t) { return t.activa || RC.cerrado(t.id, per); });
       return encabezado("Liquidación", "Selecciona una tienda para ver el detalle de cobro de " + esc(periodo(per).nombre) + ".") +
         '<section class="tarjeta"><div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Tienda</th><th class="num">Unidades vendidas</th><th class="num">Total a cobrar</th><th>Estado</th><th></th></tr></thead><tbody>' +
         ts.map(function (t) {
@@ -704,8 +764,8 @@
       (puede("cerrar") && l.estado !== "Cerrada" ? '<button class="btn btn-primario" data-accion="cerrar-liq"' + (l.estado === "Lista para cerrar" && l.lineas.length ? "" : ' disabled title="' + esc(motivo) + '"') + ">" + ico("i-candado") + "Cerrar liquidación</button>" : "") +
       "</div>";
 
-    return encabezado("Liquidación", "Detalle de cobro por ventas reportadas. Las diferencias de conciliación se muestran por separado.",
-      '<button class="btn btn-secundario" data-accion="todas">Ver todas las tiendas</button>') +
+    return encabezado("Liquidación", esPerfil("tienda") ? "Lo que pagas por tus ventas reportadas. Es el mismo detalle que ve la distribuidora." : "Detalle de cobro por ventas reportadas. Las diferencias de conciliación se muestran por separado.",
+      esPerfil("tienda") ? "" : '<button class="btn btn-secundario" data-accion="todas">Ver todas las tiendas</button>') +
       '<section class="tarjeta">' + cab + '<div class="nota ' + (l.estado === "Preliminar" ? "nota-alerta" : "nota-info") + '">' + ico(l.estado === "Preliminar" ? "i-alerta" : "i-ok") + motivo + "</div>" + detalle + acciones + "</section>" + difs;
   };
   ENLACES.liquidacion = function (v) {
@@ -725,6 +785,115 @@
         });
       }
     });
+  };
+
+  // ================= USUARIOS (solo administrador) =================
+  function alcanceUsuario(u) {
+    if (u.perfil === "repartidor") return (u.tiendas || []).map(function (id) { return tienda(id).nombre; }).join(", ") || "Sin tiendas";
+    if (u.perfil === "tienda") return tienda(u.tiendaId).nombre;
+    return "Todas las tiendas";
+  }
+  VISTAS.usuarios = function () {
+    var d = RC.get(), u = edicion.usuario ? RC.porId(d.usuarios, edicion.usuario) : null;
+    var esYo = u && u.id === usuario.id;
+    var perfilSel = u ? u.perfil : "";
+    var rutas = u ? (u.tiendas || []) : [];
+    var form = '<form class="tarjeta form" id="form-usuario" novalidate><h2 class="tarjeta-titulo">' + (u ? "Editar usuario" : "Nuevo usuario") + "</h2>" +
+      '<div class="rejilla-2">' +
+      campo("Nombre y apellido *", '<input name="nombre" required maxlength="60" autocomplete="off" value="' + esc(u ? u.nombre : "") + '" placeholder="Ej.: Carlos Vera">', "ancho") +
+      campo("Correo *", '<input name="correo" type="email" required maxlength="80" autocomplete="off" value="' + esc(u ? u.correo : "") + '" placeholder="nombre@empresa.com">', "ancho") +
+      campo("Celular *", '<input name="celular" inputmode="tel" required maxlength="10" value="' + esc(u ? u.celular : "") + '" placeholder="09XXXXXXXX">') +
+      campo("Perfil *", '<select name="perfil" required' + (esYo ? " disabled" : "") + '><option value="">Selecciona…</option>' + Object.keys(RC.PERFILES).map(function (k) {
+        return '<option value="' + k + '"' + (k === perfilSel ? " selected" : "") + ">" + RC.PERFILES[k] + "</option>";
+      }).join("") + "</select>") +
+      campo("Estado", '<select name="activo"' + (esYo ? " disabled" : "") + '><option value="1">Activo</option><option value="0"' + (u && !u.activo ? " selected" : "") + ">Inactivo</option></select>") +
+      '<div class="campo ancho" id="grupo-rutas"' + (perfilSel === "repartidor" ? "" : " hidden") + '><span>Tiendas de la ruta * <small>(al menos una)</small></span><div class="checks" data-campo="tiendas">' +
+      d.tiendas.map(function (t) { return '<label><input type="checkbox" name="tiendas" value="' + t.id + '"' + (rutas.indexOf(t.id) >= 0 ? " checked" : "") + ">" + esc(t.nombre) + (t.activa ? "" : " (inactiva)") + "</label>"; }).join("") +
+      "</div></div>" +
+      '<div class="campo ancho" id="grupo-tienda"' + (perfilSel === "tienda" ? "" : " hidden") + '><span>Tienda vinculada *</span><select name="tiendaId">' + '<option value="">Selecciona…</option>' +
+      d.tiendas.map(function (t) { return '<option value="' + t.id + '"' + (u && u.tiendaId === t.id ? " selected" : "") + ">" + esc(t.nombre) + "</option>"; }).join("") + "</select></div>" +
+      "</div>" + (esYo ? '<p class="ayuda">Es tu propio usuario: no puedes cambiar tu perfil ni desactivarte.</p>' : '<p class="ayuda">El nuevo usuario aparece de inmediato en la pantalla de acceso, dentro de su perfil.</p>') +
+      '<p class="error-form" role="alert"></p><div class="form-acciones">' +
+      (u ? '<button type="button" class="btn btn-secundario" data-accion="cancelar-usuario">Cancelar edición</button>' : "") +
+      '<button class="btn btn-primario" type="submit">' + ico(u ? "i-ok" : "i-mas") + (u ? "Guardar cambios" : "Crear usuario") + "</button></div></form>";
+    var activos = d.usuarios.filter(function (x) { return x.activo; }).length;
+    var tabla = '<div class="tarjeta"><h2 class="tarjeta-titulo">Usuarios (' + d.usuarios.length + " · " + activos + ' activos)</h2><div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Usuario</th><th>Perfil</th><th>Tiendas</th><th>Estado</th><th></th></tr></thead><tbody>' +
+      d.usuarios.map(function (x) {
+        var yo = x.id === usuario.id;
+        return "<tr" + (edicion.usuario === x.id ? ' class="fila-editando"' : "") + "><td><strong>" + esc(x.nombre) + (yo ? " (tú)" : "") + "</strong><small class='sub'>" + esc(x.correo) + " · " + esc(x.celular) + "</small></td><td>" + rol(x) + "</td><td>" + esc(alcanceUsuario(x)) + "</td><td>" +
+          (x.activo ? '<span class="estado estado-ok">Activo</span>' : '<span class="estado estado-gris">Inactivo</span>') + '</td><td class="acciones">' +
+          '<button class="btn btn-mini" data-accion="editar-usuario" data-id="' + x.id + '">' + ico("i-editar") + "Editar</button>" +
+          (yo ? "" : '<button class="btn btn-mini' + (x.activo ? " btn-peligro" : "") + '" data-accion="estado-usuario" data-id="' + x.id + '" data-activo="' + (x.activo ? "0" : "1") + '">' + (x.activo ? "Desactivar" : "Activar") + "</button>") +
+          "</td></tr>";
+      }).join("") + "</tbody></table></div></div>";
+    return encabezado("Usuarios", "Crea, edita y activa o desactiva a quienes usan ReCuenta. No se borran: un usuario inactivo no puede ingresar.") + '<div class="dos-columnas">' + form + tabla + "</div>";
+  };
+  ENLACES.usuarios = function (v) {
+    var form = $("#form-usuario", v);
+    function mostrarGrupos() {
+      var p = form.perfil.value;
+      $("#grupo-rutas", v).hidden = p !== "repartidor";
+      $("#grupo-tienda", v).hidden = p !== "tienda";
+    }
+    form.perfil.addEventListener("change", mostrarGrupos);
+    v.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-accion]");
+      if (!b) return;
+      var a = b.dataset.accion;
+      if (a === "editar-usuario") { edicion.usuario = b.dataset.id; render(); $("#form-usuario input").focus(); }
+      if (a === "cancelar-usuario") { edicion.usuario = null; render(); }
+      if (a === "estado-usuario") {
+        var u = RC.porId(RC.get().usuarios, b.dataset.id), activar = b.dataset.activo === "1";
+        confirmar(activar ? "Activar usuario" : "Desactivar usuario", activar ? u.nombre + " podrá volver a ingresar con el perfil " + rol(u) + "." : u.nombre + " ya no podrá ingresar. Sus registros se conservan.", activar ? "Activar" : "Desactivar").then(function (ok) {
+          if (!ok) return;
+          try { RC.cambiarEstadoUsuario(u.id, activar); toast((activar ? "Usuario activado: " : "Usuario desactivado: ") + u.nombre + "."); render(); } catch (err) { toast(err.message, "error"); }
+        });
+      }
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      enviarUnaVez(form, function () {
+        var nuevo = !edicion.usuario;
+        var previo = nuevo ? null : RC.porId(RC.get().usuarios, edicion.usuario);
+        var u = RC.guardarUsuario({
+          id: edicion.usuario, nombre: form.nombre.value, correo: form.correo.value, celular: form.celular.value,
+          perfil: form.perfil.disabled ? previo.perfil : form.perfil.value,
+          activo: form.activo.disabled ? previo.activo : form.activo.value === "1",
+          tiendas: $$('[name="tiendas"]:checked', form).map(function (c) { return c.value; }), tiendaId: form.tiendaId.value
+        });
+        edicion.usuario = null;
+        toast(nuevo ? "Usuario creado: " + u.nombre + " (" + rol(u) + ")." : "Cambios guardados en " + u.nombre + ".");
+        render();
+      });
+    });
+  };
+
+  // ================= BITÁCORA =================
+  VISTAS.bitacora = function () {
+    var todos = RC.bitacora();
+    var lista = todos.filter(function (b) { return (!filtroBitacora.tipo || b.tipo === filtroBitacora.tipo) && (!filtroBitacora.usuario || b.usuarioId === filtroBitacora.usuario); });
+    var usuariosCon = {};
+    todos.forEach(function (b) { if (b.usuarioId) usuariosCon[b.usuarioId] = b.usuario; });
+    var filtros = '<div class="rejilla-2 filtros-bitacora">' +
+      campo("Tipo de acción", '<select id="b-tipo"><option value="">Todos los tipos</option>' + Object.keys(RC.TIPOS_BITACORA).map(function (k) {
+        return '<option value="' + k + '"' + (filtroBitacora.tipo === k ? " selected" : "") + ">" + RC.TIPOS_BITACORA[k] + "</option>";
+      }).join("") + "</select>") +
+      campo("Usuario", '<select id="b-usuario"><option value="">Todos los usuarios</option>' + Object.keys(usuariosCon).map(function (id) {
+        return '<option value="' + id + '"' + (filtroBitacora.usuario === id ? " selected" : "") + ">" + esc(usuariosCon[id]) + "</option>";
+      }).join("") + "</select>") + "</div>";
+    var MAX = 300;
+    var tabla = lista.length ? '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>' +
+      lista.slice(0, MAX).map(function (b) {
+        var f = b.fecha.split("T");
+        return '<tr><td class="bitacora-fecha">' + fecha(f[0]) + "<small class='sub'>" + (f[1] || "").slice(0, 5) + "</small></td><td>" + esc(b.usuario) + '</td><td><span class="estado ' + (b.tipo === "gps" ? "estado-alerta" : "estado-revisada") + '">' + (RC.TIPOS_BITACORA[b.tipo] || b.tipo) + "</span></td><td>" + esc(b.detalle) + "</td></tr>";
+      }).join("") + "</tbody></table></div>" + (lista.length > MAX ? '<p class="ayuda">Se muestran las ' + MAX + " acciones más recientes de " + lista.length + ".</p>" : "") :
+      vacio("i-bitacora", "Sin acciones con estos filtros", "Cambia el tipo o el usuario para ver más registros.");
+    return encabezado("Bitácora", "Cada acción queda registrada con fecha, hora, usuario y detalle. Sirve para auditar quién hizo qué.") +
+      '<section class="tarjeta">' + filtros + '<p class="ayuda">' + lista.length + " acción(es)</p>" + tabla + "</section>";
+  };
+  ENLACES.bitacora = function (v) {
+    $("#b-tipo", v).addEventListener("change", function (e) { filtroBitacora.tipo = e.target.value; render(); });
+    $("#b-usuario", v).addEventListener("change", function (e) { filtroBitacora.usuario = e.target.value; render(); });
   };
 
   // ---------------- Exportación CSV (separador ; y punto decimal) ----------------
@@ -785,10 +954,10 @@
 
   // ---------------- Arranque ----------------
   function arrancar() {
-    var s = RC.sesion();
-    usuario = s && USUARIOS[s.perfil] ? USUARIOS[s.perfil] : null;
+    usuario = RC.sesion();
     $("#aviso-almacenamiento").hidden = RC.persistenciaOk();
     if (!usuario) {
+      RC.cerrarSesion();
       $("#app").hidden = true;
       $("#pantalla-acceso").hidden = false;
       document.title = "ReCuenta · Acceso";
@@ -805,6 +974,8 @@
     if (!b) return;
     var a = b.dataset.accion;
     if (a === "entrar") entrar(b.dataset.perfil);
+    if (a === "entrar-como") entrarComo(b.dataset.id);
+    if (a === "cerrar-selector") $("#selector-usuario").hidden = true;
     if (a === "salir") confirmar("Cerrar sesión", "¿Quieres salir de ReCuenta? Tus registros quedan guardados en este navegador.", "Cerrar sesión").then(function (ok) { if (ok) salir(); });
     if (a === "menu") document.body.classList.toggle("menu-abierto");
     if (a === "restaurar") confirmar("Restaurar datos de ejemplo", "Se borrarán todos los cambios hechos en este navegador y se cargará de nuevo el caso de Milagro (entrega 100, ventas 70, devoluciones 25, conteo pendiente). ¿Continuar?", "Restaurar").then(function (ok) {
@@ -812,20 +983,16 @@
       RC.restaurarDemo();
       Object.keys(edicion).forEach(function (k) { edicion[k] = null; });
       abierta = null; filtroEstado = "";
-      filtro = { tienda: "T1", periodo: "2026-11" };
-      RC.guardarFiltro(filtro);
+      filtroBitacora = { tipo: "", usuario: "" };
+      RC.guardarFiltro({ tienda: "T1", periodo: "2026-11" });
+      // Si el usuario de la sesión no existe en los datos de ejemplo, se vuelve al acceso.
+      if (!RC.actor()) { salirSinConfirmar("Datos de ejemplo restaurados. Tu usuario no existe en el caso de ejemplo: vuelve a ingresar."); return; }
+      filtro = RC.filtro();
       toast("Datos de ejemplo restaurados.");
       irA("inicio");
     });
   });
-  $("#form-login").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var f = new FormData(e.target), correo = String(f.get("correo") || "").trim().toLowerCase(), clave = String(f.get("clave") || "");
-    var u = Object.keys(USUARIOS).map(function (k) { return USUARIOS[k]; }).filter(function (x) { return x.correo === correo; })[0];
-    if (!u || u.clave !== clave) { $("#login-error").textContent = "Correo o contraseña incorrectos. Usa una de las cuentas de la tabla."; return; }
-    $("#login-error").textContent = "";
-    entrar(u.perfil);
-  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("#selector-usuario").hidden) $("#selector-usuario").hidden = true; });
   $("#f-tienda").addEventListener("change", function (e) { cambiarFiltro({ tienda: e.target.value }); });
   $("#f-periodo").addEventListener("change", function (e) { cambiarFiltro({ periodo: e.target.value }); });
   window.addEventListener("hashchange", function () { if (usuario) { abierta = null; render(); $("#vista").focus({ preventScroll: true }); window.scrollTo(0, 0); } });
