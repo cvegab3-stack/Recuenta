@@ -121,7 +121,6 @@
     for (var i = 0; i < ps.length; i++) { if (ps[i].id === per) return prev; prev = ps[i].id; }
     return null;
   }
-  function fechaEnPeriodo(fecha, per) { return typeof fecha === "string" && fecha.slice(0, 7) === per; }
   function esEntero(n) { return typeof n === "number" && isFinite(n) && Math.floor(n) === n; }
 
   function precioEn(producto, per) {
@@ -248,16 +247,17 @@
 
   // ---------- Validaciones comunes ----------
   function error(msg, campo) { var e = new Error(msg); e.campo = campo; throw e; }
+  function chk(msg, campo) { if (msg) error(msg, campo); }
+  var V = window.RCV;
 
   function validarBase(r) {
     if (!r.tiendaId || !porId(estado.tiendas, r.tiendaId)) error("Selecciona la tienda.", "tiendaId");
     if (!r.periodo || !porId(estado.periodos, r.periodo)) error("Selecciona el período.", "periodo");
-    if (!r.fecha) error("Indica la fecha.", "fecha");
-    if (!fechaEnPeriodo(r.fecha, r.periodo)) error("La fecha debe estar dentro del período " + (porId(estado.periodos, r.periodo) || {}).nombre + ".", "fecha");
-    if (cerrado(r.tiendaId, r.periodo)) error("La liquidación de esta tienda y período ya está cerrada. No se pueden modificar sus movimientos.", "periodo");
+    chk(V.fecha(r.fecha, r.periodo, (porId(estado.periodos, r.periodo) || {}).nombre), "fecha");
+    if (cerrado(r.tiendaId, r.periodo)) error("La liquidación de esta tienda y período ya está cerrada. No se pueden modificar sus movimientos.", "tiendaId");
   }
   function validarCantidad(c, campo) {
-    if (!esEntero(c) || c <= 0) error("La cantidad debe ser un número entero mayor que cero.", campo || "cantidad");
+    chk(V.cantidad(typeof c === "number" && isFinite(c) ? String(c) : (typeof c === "string" ? c : "")), campo || "cantidad");
   }
 
   // ---------- Operaciones ----------
@@ -279,11 +279,13 @@
       if (!r.lineas || !r.lineas.length) error("Agrega al menos un producto a la entrega.", "lineas");
       var vistos = {};
       r.lineas.forEach(function (l, i) {
-        if (!l.productoId || !porId(estado.productos, l.productoId)) error("Selecciona el producto de la línea " + (i + 1) + ".", "linea-" + i);
+        if (!l.productoId || !porId(estado.productos, l.productoId)) error("Selecciona el producto.", "linea-" + i);
         if (vistos[l.productoId]) error("El producto está repetido en la entrega. Suma las cantidades en una sola línea.", "linea-" + i);
         vistos[l.productoId] = true;
-        validarCantidad(l.cantidad, "linea-" + i);
+        validarCantidad(l.cantidad, "cantidad-" + i);
       });
+      chk(V.nota(r.nota), "nota");
+      r.nota = String(r.nota || "").trim();
       if (r.id) {
         var previo = porId(estado.entregas, r.id);
         if (!previo) error("La entrega ya no existe.");
@@ -386,7 +388,8 @@
       exigir("conteo");
       exigirTienda(t);
       if (cerrado(t, per)) error("La liquidación de esta tienda y período ya está cerrada.");
-      if (!esEntero(cantidad) || cantidad < 0) error("El conteo físico debe ser un número entero igual o mayor que cero.", "conteo");
+      chk(V.conteo(esEntero(cantidad) ? String(cantidad) : (typeof cantidad === "string" ? cantidad : "x")), "conteo");
+      cantidad = Number(cantidad);
       var k = clave(t, p, per);
       var prev = estado.conteos[k];
       var hoy = new Date();
@@ -410,7 +413,9 @@
       var c = estado.conteos[k];
       if (!c) error("Primero registra el conteo físico.");
       texto = (texto || "").trim();
-      if (marcarRevisada && texto.length < 5) error("Para marcar la diferencia como revisada, escribe una observación (mínimo 5 caracteres).", "observacion");
+      // Toda observación (y marcar la diferencia como revisada) exige de 5 a 200 caracteres. Reabrir no la exige.
+      if (marcarRevisada !== false) chk(V.observacion(texto), "observacion");
+      else chk(V.texto(texto, 5, 200, "la observación", true), "observacion");
       c.observacion = texto;
       if (marcarRevisada !== undefined) c.revisada = !!marcarRevisada;
       registrar("revision", (marcarRevisada === true ? "Diferencia marcada como revisada" : marcarRevisada === false ? "Diferencia reabierta" : "Observación guardada") +
@@ -436,15 +441,18 @@
     // ---------- Catálogo ----------
     guardarTienda: function (r) {
       exigir("catalogoEditar");
-      var nombre = (r.nombre || "").trim();
-      if (nombre.length < 3) error("Escribe el nombre de la tienda (mínimo 3 caracteres).", "nombre");
-      var dup = estado.tiendas.some(function (t) { return t.nombre.toLowerCase() === nombre.toLowerCase() && t.id !== r.id; });
-      if (dup) error("Ya existe una tienda con ese nombre.", "nombre");
-      var pct = Number(r.ajustePct);
-      if (!isFinite(pct) || pct < 0 || pct > 50) error("El ajuste pactado debe estar entre 0 % y 50 %.", "ajustePct");
-      if (r.telefono && !/^[0-9 +()-]{7,15}$/.test(r.telefono)) error("El teléfono solo admite números (7 a 15 dígitos).", "telefono");
-      var datos = { nombre: nombre, direccion: (r.direccion || "").trim(), contacto: (r.contacto || "").trim(), telefono: (r.telefono || "").trim(),
-        ajustePct: r2(pct), ajusteNombre: (r.ajusteNombre || "").trim() || (pct ? "Ajuste pactado" : "Sin ajuste pactado"), activa: r.activa !== false };
+      var nombre = String(r.nombre || "").trim();
+      chk(V.nombreCosa(nombre, "de la tienda", function (s) {
+        return estado.tiendas.some(function (t) { return t.nombre.toLowerCase() === s.toLowerCase() && t.id !== r.id; });
+      }), "nombre");
+      chk(V.nombrePersona(r.contacto, { etiqueta: "el nombre del contacto" }), "contacto");
+      chk(V.direccion(r.direccion), "direccion");
+      chk(V.telefono(r.telefono), "telefono");
+      chk(V.ajustePct(r.ajustePct), "ajustePct");
+      var pct = Number(String(r.ajustePct).replace(",", "."));
+      chk(V.ajusteNombre(r.ajusteNombre, pct), "ajusteNombre");
+      var datos = { nombre: nombre, direccion: String(r.direccion).trim(), contacto: String(r.contacto).trim().replace(/\s+/g, " "), telefono: V.limpiarTelefono(r.telefono),
+        ajustePct: pct, ajusteNombre: String(r.ajusteNombre || "").trim() || "Sin ajuste pactado", activa: r.activa !== false };
       if (r.id) { var t = porId(estado.tiendas, r.id); Object.assign(t, datos); registrar("catalogo", "Tienda editada: " + t.nombre); guardar(); return t; }
       var n = Object.assign({ id: nuevoId("T") }, datos);
       estado.tiendas.push(n); registrar("catalogo", "Tienda creada: " + n.nombre); guardar(); return n;
@@ -452,14 +460,16 @@
 
     guardarProducto: function (r, perActual) {
       exigir("catalogoEditar");
-      var nombre = (r.nombre || "").trim();
-      if (nombre.length < 3) error("Escribe el nombre del producto (mínimo 3 caracteres).", "nombre");
-      var dup = estado.productos.some(function (p) { return p.nombre.toLowerCase() === nombre.toLowerCase() && p.id !== r.id; });
-      if (dup) error("Ya existe un producto con ese nombre.", "nombre");
-      var precio = Number(r.precio);
-      if (!isFinite(precio) || precio <= 0) error("El precio de consignación debe ser mayor que cero.", "precio");
-      precio = r2(precio);
-      var datos = { nombre: nombre, codigo: (r.codigo || "").trim().toUpperCase(), unidad: (r.unidad || "unidad").trim(), activo: r.activo !== false };
+      var nombre = String(r.nombre || "").trim();
+      chk(V.nombreCosa(nombre, "del producto", function (s) {
+        return estado.productos.some(function (p) { return p.nombre.toLowerCase() === s.toLowerCase() && p.id !== r.id; });
+      }), "nombre");
+      var codigo = String(r.codigo || "").trim().toUpperCase();
+      chk(V.codigo(codigo, function (s) { return estado.productos.some(function (p) { return (p.codigo || "").toUpperCase() === s && p.id !== r.id; }); }), "codigo");
+      chk(V.unidad(r.unidad), "unidad");
+      chk(V.precio(r.precio), "precio");
+      var precio = r2(Number(String(r.precio).replace(",", ".")));
+      var datos = { nombre: nombre, codigo: codigo, unidad: String(r.unidad).trim().toLowerCase(), activo: r.activo !== false };
       if (r.id) {
         var p = porId(estado.productos, r.id);
         Object.assign(p, datos);
@@ -496,14 +506,11 @@
       exigir("usuarios");
       var yo = actor();
       var nombre = String(r.nombre || "").trim().replace(/\s+/g, " ");
-      if (nombre.length < 3 || nombre.length > 60) error("Escribe el nombre y apellido (3 a 60 caracteres).", "nombre");
-      if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]+$/.test(nombre)) error("El nombre solo admite letras, espacios, tildes, ñ y los signos ' . -", "nombre");
-      if (nombre.split(" ").filter(function (x) { return x.replace(/[.'-]/g, "").length >= 2; }).length < 2) error("Escribe nombre y apellido.", "nombre");
+      chk(V.nombrePersona(nombre, { apellido: true, etiqueta: "el nombre y apellido" }), "nombre");
       var correo = String(r.correo || "").trim().toLowerCase();
-      if (!/^[^\s@<>{}]+@[^\s@<>{}]+\.[a-z]{2,}$/i.test(correo)) error("Escribe un correo válido, por ejemplo nombre@empresa.com.", "correo");
-      if ((estado.usuarios || []).some(function (u) { return u.correo.toLowerCase() === correo && u.id !== r.id; })) error("Ya existe un usuario con ese correo.", "correo");
-      var celular = String(r.celular || "").replace(/[\s-]/g, "");
-      if (!/^09\d{8}$/.test(celular)) error("El celular debe empezar con 09 y tener 10 dígitos.", "celular");
+      chk(V.correo(correo, function (s) { return (estado.usuarios || []).some(function (u) { return u.correo.toLowerCase() === s && u.id !== r.id; }); }), "correo");
+      chk(V.telefono(r.celular, true), "celular");
+      var celular = V.limpiarTelefono(r.celular);
       if (!PERFILES[r.perfil]) error("Selecciona el perfil.", "perfil");
       var activo = r.activo !== false;
       var tiendas = [], tiendaId = "";

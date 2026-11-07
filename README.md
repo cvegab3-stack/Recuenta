@@ -93,7 +93,15 @@ Opcional: en Conciliación, **Agregar** observación → **Marcar diferencia com
 - **Liquidación:** cobra solo las **ventas reportadas**, con el precio vigente del período, menos el **ajuste pactado** de la tienda (porcentaje configurable en Tiendas). Las diferencias se muestran por separado y **no generan cargo automático**, porque un faltante se revisa antes de considerarse pérdida.
 - **Preliminar y cierre:** con conteos pendientes o diferencias sin revisar, la liquidación es *Preliminar* (se puede exportar e imprimir). Cuando todo está conciliado o revisado, el contador o el administrador la cierra. Al cerrar, el importe y el detalle quedan fijos aunque luego cambien precios o catálogo, y se bloquean los movimientos de esa tienda y período.
 - **Precios por período:** si cambias el precio de un producto, rige desde el período activo. Los períodos anteriores conservan su precio.
-- **Validaciones:** campos obligatorios, fecha dentro del período, cantidades enteras positivas, no vender ni devolver más de lo disponible, no reducir una entrega por debajo de lo ya consumido, sin productos repetidos en una entrega y protección contra doble clic en Guardar.
+- **Validaciones:** cada campo muestra su mensaje debajo, en rojo, al salir del campo y al intentar guardar. El foco va al primer campo con error y no se guarda nada mientras haya errores. Las mismas reglas (`js/validacion.js`) se aplican otra vez en `store.js`, que es la que manda:
+  - Nombres de personas: solo letras, espacios, tildes, ñ y `' . -`, de 3 a 60 caracteres; en usuarios, nombre y apellido.
+  - Nombres de tienda o producto: de 3 a 60 caracteres, sin `< > { }` y sin duplicados. Dirección obligatoria, de 5 a 90 caracteres.
+  - Teléfonos de Ecuador: celular `09` + 8 dígitos o fijo `02`–`07` + 7 dígitos (en usuarios, solo celular). Correo con formato válido y único.
+  - Código de producto de 3 a 12 caracteres `A-Z 0-9 -`, en mayúsculas y único. Unidad de 2 a 20 letras. Precio mayor que 0 y hasta 999,99, con dos decimales como máximo.
+  - Ajuste pactado de 0 % a 50 % con un decimal; si es mayor que 0, su nombre es obligatorio.
+  - Fechas dentro del período y no posteriores a hoy. Cantidades enteras de 1 a 10000 sin superar lo disponible. Conteo físico entero de 0 a 100000.
+  - Observaciones de 5 a 200 caracteres, sin `< > { }`. Selectores obligatorios con el mensaje "Selecciona…".
+  - No vender ni devolver más de lo disponible, no reducir una entrega por debajo de lo ya consumido, sin productos repetidos en una entrega y protección contra doble clic en Guardar.
 
 ### Supuestos documentados
 - Los perfiles administrador, repartidor y contador son los roles definidos en la ficha técnica del proyecto. El perfil Tienda se agrega para que la tienda vea la misma cuenta que la distribuidora.
@@ -110,6 +118,7 @@ ReCuenta/
 ├── index.html            Punto de entrada (acceso + aplicación)
 ├── css/styles.css        Estilos, diseño adaptable e impresión
 ├── js/datos-demo.js      Datos ficticios del caso de Milagro
+├── js/validacion.js      Reglas de validación compartidas por la interfaz y store.js
 ├── js/store.js           Estado, almacenamiento local y reglas de consignación
 ├── js/app.js             Vistas, navegación por perfil, CSV e impresión
 ├── assets/               Logo, símbolo y favicon (SVG locales)

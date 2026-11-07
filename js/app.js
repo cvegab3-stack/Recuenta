@@ -62,7 +62,8 @@
   function rangoPeriodo(per) {
     var y = Number(per.slice(0, 4)), m = Number(per.slice(5, 7));
     var ult = new Date(y, m, 0).getDate();
-    return { min: per + "-01", max: per + "-" + String(ult).padStart(2, "0") };
+    var max = per + "-" + String(ult).padStart(2, "0"), hoy = RCV.hoy();
+    return { min: per + "-01", max: hoy < max ? hoy : max };
   }
 
   // ---------------- Avisos y confirmaciones ----------------
@@ -89,15 +90,81 @@
       document.addEventListener("keydown", esc_);
     });
   }
+  // ---------------- Validación en línea ----------------
+  // Cada campo muestra su mensaje debajo, en rojo, al salir del campo y al intentar guardar.
+  var seqMsg = 0;
+  var pulsandoBoton = false;
+  document.addEventListener("pointerdown", function (e) { pulsandoBoton = !!(e.target.closest && e.target.closest("button")); }, true);
+  document.addEventListener("pointerup", function () { setTimeout(function () { pulsandoBoton = false; }, 0); }, true);
+  function claveCampo(el) { return el.closest(".linea") ? el.name : (el.dataset.campo || el.name || el.id || "campo"); }
+  function nodosMsg(el) {
+    var linea = el.closest(".linea");
+    if (linea) {
+      var lista = [], n = linea.nextElementSibling;
+      while (n && n.classList.contains("msg-campo")) { lista.push(n); n = n.nextElementSibling; }
+      return { lista: lista, poner: function (nodo) { (lista.length ? lista[lista.length - 1] : linea).after(nodo); } };
+    }
+    var cont = el.closest(".campo") || (el.tagName === "DIV" ? el : el.parentNode);
+    return { lista: $$(":scope > .msg-campo", cont), poner: function (nodo) { cont.appendChild(nodo); } };
+  }
+  function marcarCampo(el, msg) {
+    el.classList.toggle("invalido", !!msg);
+    if (msg) el.setAttribute("aria-invalid", "true"); else el.removeAttribute("aria-invalid");
+    var c = nodosMsg(el), k = claveCampo(el);
+    var nodo = c.lista.filter(function (x) { return x.dataset.para === k; })[0];
+    if (!msg) { if (nodo) nodo.remove(); el.removeAttribute("aria-describedby"); return; }
+    if (!nodo) {
+      nodo = document.createElement("small");
+      nodo.className = "msg-campo"; nodo.dataset.para = k; nodo.id = "msg-" + (++seqMsg);
+      c.poner(nodo);
+    }
+    nodo.textContent = msg;
+    el.setAttribute("aria-describedby", nodo.id);
+  }
+  function enfocar(el) {
+    var f = el.tagName === "DIV" ? $("input, select, textarea", el) : el;
+    if (f && f.focus) { f.focus({ preventScroll: true }); (f.closest(".campo") || f).scrollIntoView({ block: "center", behavior: "smooth" }); }
+  }
+  // reglas(): devuelve [[elemento, fn(elemento) -> mensaje], ...]; se recalcula porque hay líneas dinámicas.
+  function validador(form, reglas) {
+    function lista() { return reglas().filter(function (r) { return r[0]; }); }
+    function correr(r) { var m = r[1](r[0]) || ""; marcarCampo(r[0], m); return m; }
+    function relacionadas(t) { return lista().filter(function (r) { return r[0] === t || (r[0].tagName === "DIV" && r[0].contains(t)); }); }
+    // Si el foco sale del campo porque se está pulsando un botón del formulario, no se valida aquí:
+    // el mensaje empujaría el botón antes de soltar el clic y el clic se perdería. Guardar valida todo.
+    form.addEventListener("focusout", function (e) {
+      var rel = e.relatedTarget;
+      if (pulsandoBoton ||(rel && rel.tagName === "BUTTON" && form.contains(rel))) { relacionadas(e.target).forEach(function (r) { r[0].dataset.tocado = "1"; }); return; }
+      relacionadas(e.target).forEach(function (r) { r[0].dataset.tocado = "1"; correr(r); });
+    });
+    function vivo(e) {
+      // Un campo de texto dispara "change" al perder el foco: si es por pulsar un botón, Guardar valida todo.
+      if (e.type === "change" && pulsandoBoton) return;
+      // Revalida el campo editado (si ya se tocó) y los que estaban con error, para limpiar dependencias.
+      lista().forEach(function (r) {
+        var propio = r[0] === e.target || (r[0].tagName === "DIV" && r[0].contains(e.target));
+        if ((propio && (r[0].dataset.tocado || e.type === "change")) || r[0].getAttribute("aria-invalid")) correr(r);
+      });
+    }
+    form.addEventListener("input", vivo);
+    form.addEventListener("change", vivo);
+    form.validarTodo = function () {
+      var primero = null;
+      lista().forEach(function (r) { r[0].dataset.tocado = "1"; if (correr(r) && !primero) primero = r[0]; });
+      var box = $(".error-form", form); if (box) box.textContent = "";
+      if (primero) enfocar(primero);
+      return !primero;
+    };
+  }
+  function campoDe(form, nombre) {
+    return form.querySelector('[data-campo="' + nombre + '"]') || form.querySelector('[name="' + nombre + '"]:not([type="checkbox"])');
+  }
+  // Errores de store.js: si traen campo, se muestran debajo de ese campo; si no, arriba del botón.
   function mostrarError(form, e) {
     var box = $(".error-form", form);
-    $$(".invalido", form).forEach(function (x) { x.classList.remove("invalido"); });
-    if (box) box.textContent = e.message;
-    if (e.campo) {
-      var campo = form.querySelector('[name="' + e.campo + '"]') || form.querySelector('[data-campo="' + e.campo + '"]');
-      if (campo) { campo.classList.add("invalido"); if (campo.focus) campo.focus(); }
-    }
-    toast(e.message, "error");
+    var campo = e.campo ? campoDe(form, e.campo) : null;
+    if (campo) { if (box) box.textContent = ""; marcarCampo(campo, e.message); enfocar(campo); }
+    else { if (box) box.textContent = e.message; toast(e.message, "error"); }
   }
 
   // Evita guardar dos veces por doble clic: bloquea el formulario mientras procesa.
@@ -368,12 +435,12 @@
     var form = editar ? '<form class="tarjeta form" id="form-tienda" novalidate><h2 class="tarjeta-titulo">' + (t ? "Editar tienda" : "Nueva tienda") + "</h2>" +
       '<div class="rejilla-2">' +
       campo("Nombre de la tienda *", '<input name="nombre" required maxlength="60" value="' + esc(t ? t.nombre : "") + '" placeholder="Ej.: Despensa La Esquina">') +
-      campo("Persona de contacto", '<input name="contacto" maxlength="60" value="' + esc(t ? t.contacto : "") + '">') +
-      campo("Dirección", '<input name="direccion" maxlength="90" value="' + esc(t ? t.direccion : "") + '" placeholder="Calle, sector, Milagro">', "ancho") +
-      campo("Teléfono", '<input name="telefono" inputmode="tel" maxlength="15" value="' + esc(t ? t.telefono : "") + '">') +
+      campo("Persona de contacto *", '<input name="contacto" maxlength="60" autocomplete="off" value="' + esc(t ? t.contacto : "") + '" placeholder="Ej.: Rosa Mendoza">') +
+      campo("Dirección *", '<input name="direccion" maxlength="90" value="' + esc(t ? t.direccion : "") + '" placeholder="Calle, sector, Milagro">', "ancho") +
+      campo("Celular o teléfono *", '<input name="telefono" type="tel" inputmode="tel" maxlength="10" value="' + esc(t ? t.telefono : "") + '" placeholder="09XXXXXXXX o 04XXXXXXX">') +
       campo("Estado", '<select name="activa"><option value="1">Activa</option><option value="0"' + (t && !t.activa ? " selected" : "") + ">Inactiva</option></select>") +
-      campo("Ajuste pactado (%)", '<input name="ajustePct" type="number" min="0" max="50" step="0.1" value="' + (t ? t.ajustePct : 0) + '">') +
-      campo("Nombre del ajuste", '<input name="ajusteNombre" maxlength="40" value="' + esc(t ? t.ajusteNombre : "") + '" placeholder="Ej.: Descuento por exhibición">') +
+      campo("Ajuste pactado (%) *", '<input name="ajustePct" type="number" inputmode="decimal" min="0" max="50" step="0.1" value="' + (t ? t.ajustePct : 0) + '">') +
+      campo("Nombre del ajuste", '<input name="ajusteNombre" maxlength="40" value="' + esc(t && t.ajustePct ? t.ajusteNombre : "") + '" placeholder="Obligatorio si el ajuste es mayor que 0">') +
       '</div><p class="ayuda">El ajuste pactado se descuenta del subtotal de la liquidación de esta tienda.</p><p class="error-form" role="alert"></p><div class="form-acciones">' +
       (t ? '<button type="button" class="btn btn-secundario" data-accion="cancelar-tienda">Cancelar edición</button>' : "") +
       '<button class="btn btn-primario" type="submit">' + ico(t ? "i-ok" : "i-mas") + (t ? "Guardar cambios" : "Agregar tienda") + "</button></div></form>" : "";
@@ -390,9 +457,9 @@
     var form = editar ? '<form class="tarjeta form" id="form-producto" novalidate><h2 class="tarjeta-titulo">' + (p ? "Editar producto" : "Nuevo producto") + "</h2>" +
       '<div class="rejilla-2">' +
       campo("Nombre del producto *", '<input name="nombre" required maxlength="60" value="' + esc(p ? p.nombre : "") + '" placeholder="Ej.: Café molido 250 g">', "ancho") +
-      campo("Código", '<input name="codigo" maxlength="12" value="' + esc(p ? p.codigo : "") + '">') +
-      campo("Unidad", '<input name="unidad" maxlength="20" value="' + esc(p ? p.unidad : "unidad") + '">') +
-      campo("Precio de consignación (USD) *", '<input name="precio" type="number" min="0.01" step="0.01" required value="' + (p ? RC.precioEn(p, per).toFixed(2) : "") + '">') +
+      campo("Código *", '<input name="codigo" maxlength="12" autocapitalize="characters" class="mayusculas" value="' + esc(p ? p.codigo : "") + '" placeholder="Ej.: CAF-250">') +
+      campo("Unidad *", '<input name="unidad" maxlength="20" value="' + esc(p ? p.unidad : "") + '" placeholder="Ej.: funda">') +
+      campo("Precio de consignación (USD) *", '<input name="precio" type="number" inputmode="decimal" min="0.01" max="999.99" step="0.01" required value="' + (p ? RC.precioEn(p, per).toFixed(2) : "") + '" placeholder="0,00">') +
       campo("Estado", '<select name="activo"><option value="1">Activo</option><option value="0"' + (p && !p.activo ? " selected" : "") + ">Inactivo</option></select>") +
       '</div><p class="ayuda">' + (p ? "Si cambias el precio, rige desde " + esc(periodo(per).nombre) + ". Los períodos anteriores y las liquidaciones cerradas conservan su precio." : "Precio que la tienda paga por cada unidad vendida.") +
       '</p><p class="error-form" role="alert"></p><div class="form-acciones">' +
@@ -437,8 +504,19 @@
       }
     });
     var ft = $("#form-tienda", v);
+    if (ft) validador(ft, function () {
+      return [
+        [ft.nombre, function (el) { return RCV.nombreCosa(el.value, "de la tienda", function (s) { return RC.get().tiendas.some(function (t) { return t.nombre.toLowerCase() === s.toLowerCase() && t.id !== edicion.tienda; }); }); }],
+        [ft.contacto, function (el) { return RCV.nombrePersona(el.value, { etiqueta: "el nombre del contacto" }); }],
+        [ft.direccion, function (el) { return RCV.direccion(el.value); }],
+        [ft.telefono, function (el) { return RCV.telefono(el.value); }],
+        [ft.ajustePct, function (el) { return RCV.ajustePct(el.value); }],
+        [ft.ajusteNombre, function (el) { return RCV.ajusteNombre(el.value, ft.ajustePct.value); }]
+      ];
+    });
     if (ft) ft.addEventListener("submit", function (e) {
       e.preventDefault();
+      if (!ft.validarTodo()) return;
       enviarUnaVez(ft, function () {
         var f = new FormData(ft);
         var nuevo = !edicion.tienda;
@@ -450,8 +528,22 @@
       });
     });
     var fp = $("#form-producto", v);
+    if (fp) {
+      validador(fp, function () {
+        var otros = RC.get().productos.filter(function (p) { return p.id !== edicion.producto; });
+        return [
+          [fp.nombre, function (el) { return RCV.nombreCosa(el.value, "del producto", function (s) { return otros.some(function (p) { return p.nombre.toLowerCase() === s.toLowerCase(); }); }); }],
+          [fp.codigo, function (el) { return RCV.codigo(el.value, function (s) { return otros.some(function (p) { return (p.codigo || "").toUpperCase() === s; }); }); }],
+          [fp.unidad, function (el) { return RCV.unidad(el.value); }],
+          [fp.precio, function (el) { return RCV.precio(el.value); }]
+        ];
+      });
+      // El código se convierte a mayúsculas al escribir.
+      fp.codigo.addEventListener("input", function () { var p = fp.codigo.selectionStart; fp.codigo.value = fp.codigo.value.toUpperCase(); fp.codigo.setSelectionRange(p, p); });
+    }
     if (fp) fp.addEventListener("submit", function (e) {
       e.preventDefault();
+      if (!fp.validarTodo()) return;
       enviarUnaVez(fp, function () {
         var f = new FormData(fp);
         var nuevo = !edicion.producto;
@@ -481,7 +573,7 @@
       '</div><div class="lineas" data-campo="lineas"><div class="lineas-cab"><span>Producto *</span><span>Cantidad *</span><span></span></div>' +
       lineas.map(function (l, i) { return lineaHtml(l, i); }).join("") + "</div>" +
       '<button type="button" class="btn btn-secundario btn-mini" data-accion="agregar-linea">' + ico("i-mas") + "Agregar producto</button>" +
-      campo("Nota o número de guía", '<input name="nota" maxlength="80" value="' + esc(ed ? ed.nota : "") + '" placeholder="Ej.: Guía 0015 - ruta centro">', "ancho") +
+      campo("Nota o número de guía (opcional)", '<input name="nota" maxlength="80" value="' + esc(ed ? ed.nota : "") + '" placeholder="Ej.: Guía 0015 - ruta centro">', "ancho") +
       '<p class="error-form" role="alert"></p><div class="form-acciones">' +
       (ed ? '<button type="button" class="btn btn-secundario" data-accion="cancelar">Cancelar corrección</button>' : "") +
       '<button class="btn btn-primario" type="submit"' + (bloqueado ? " disabled" : "") + ">" + ico("i-ok") + (ed ? "Guardar corrección" : "Guardar entrega") + "</button></div></form>" : "";
@@ -502,12 +594,32 @@
   };
   function lineaHtml(l, i) {
     return '<div class="linea" data-i="' + i + '"><select name="producto" data-campo="linea-' + i + '" aria-label="Producto">' + opcionesProductos(l.productoId) + "</select>" +
-      '<input name="cantidad" type="number" min="1" step="1" inputmode="numeric" aria-label="Cantidad" value="' + (l.cantidad || "") + '" placeholder="0">' +
+      '<input name="cantidad" data-campo="cantidad-' + i + '" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="Cantidad" value="' + (l.cantidad || "") + '" placeholder="0">' +
       '<button type="button" class="btn-icono" data-accion="quitar-linea" aria-label="Quitar producto">' + ico("i-cerrar") + "</button></div>";
+  }
+  function reglaFecha(form) {
+    return [form.fecha, function (el) { return RCV.fecha(el.value, filtro.periodo, periodo(filtro.periodo).nombre); }];
   }
   ENLACES.entregas = function (v) {
     var form = $("#form-entrega", v);
     vigilarCierre(form);
+    if (form) validador(form, function () {
+      var reglas = [reglaFecha(form), [form.tiendaId, function (el) { return RCV.seleccion(el.value, "la tienda"); }]];
+      var filas = $$(".linea", form);
+      filas.forEach(function (row, i) {
+        var sel = $('[name="producto"]', row), cant = $('[name="cantidad"]', row);
+        // Las claves de los campos siguen la posición actual de la línea.
+        sel.dataset.campo = "linea-" + i; cant.dataset.campo = "cantidad-" + i;
+        reglas.push([sel, function (el) {
+          if (!el.value) return "Selecciona el producto.";
+          var repetido = filas.slice(0, i).some(function (r) { return $('[name="producto"]', r).value === el.value; });
+          return repetido ? "El producto está repetido. Suma las cantidades en una sola línea." : "";
+        }]);
+        reglas.push([cant, function (el) { return RCV.cantidad(el.value); }]);
+      });
+      reglas.push([form.nota, function (el) { return RCV.nota(el.value); }]);
+      return reglas;
+    });
     v.addEventListener("click", function (e) {
       var b = e.target.closest("[data-accion]");
       if (!b) return;
@@ -520,7 +632,10 @@
       }
       if (a === "quitar-linea") {
         if ($$(".linea", v).length === 1) { toast("La entrega necesita al menos un producto.", "error"); return; }
-        b.closest(".linea").remove();
+        var fila = b.closest(".linea");
+        // Quita también los mensajes de error de esa línea.
+        while (fila.nextElementSibling && fila.nextElementSibling.classList.contains("msg-campo")) fila.nextElementSibling.remove();
+        fila.remove();
       }
       if (a === "editar") { edicion.entregas = b.dataset.id; render(); $("#form-entrega").scrollIntoView({ behavior: "smooth" }); }
       if (a === "cancelar") { edicion.entregas = null; render(); }
@@ -534,6 +649,7 @@
     });
     if (form) form.addEventListener("submit", function (e) {
       e.preventDefault();
+      if (!form.validarTodo()) return;
       enviarUnaVez(form, function () {
         var f = new FormData(form);
         var lineas = $$(".linea", form).map(function (row) {
@@ -568,7 +684,7 @@
       campo("Período", '<input value="' + esc(periodo(per).nombre) + '" disabled>') +
       campo("Tienda *", '<select name="tiendaId" required>' + opcionesTiendas(tSel, true) + "</select>", "ancho") +
       campo("Producto *", '<select name="productoId" required>' + opcionesProductos(ed ? ed.productoId : "") + "</select>", "ancho") +
-      campo("Cantidad *", '<input name="cantidad" type="number" min="1" step="1" inputmode="numeric" required value="' + (ed ? ed.cantidad : "") + '" placeholder="0">') +
+      campo("Cantidad *", '<input name="cantidad" type="number" min="1" max="10000" step="1" inputmode="numeric" required value="' + (ed ? ed.cantidad : "") + '" placeholder="0">') +
       (esVenta ? "" : campo("Condición *", '<select name="condicion" required><option value="">Selecciona…</option>' + Object.keys(CONDICIONES).map(function (k) {
         return '<option value="' + k + '"' + (ed && ed.condicion === k ? " selected" : "") + ">" + CONDICIONES[k] + "</option>";
       }).join("") + "</select>")) +
@@ -607,8 +723,21 @@
         vigilarCierre(form);
         form.addEventListener("change", actualizarDisponible);
         actualizarDisponible();
+        validador(form, function () {
+          var reglas = [reglaFecha(form),
+            [form.tiendaId, function (el) { return RCV.seleccion(el.value, "la tienda"); }],
+            [form.productoId, function (el) { return RCV.seleccion(el.value, "el producto"); }],
+            [form.cantidad, function (el) {
+              var t = form.tiendaId.value, p = form.productoId.value, max = null;
+              if (t && p) { var excl = {}; excl[tipo === "ventas" ? "venta" : "devolucion"] = edicion[tipo]; max = RC.disponible(t, p, filtro.periodo, excl); }
+              return RCV.cantidad(el.value, max, max !== null ? "de " + producto(p).nombre + " en esta tienda" : "");
+            }]];
+          if (form.condicion) reglas.push([form.condicion, function (el) { return RCV.seleccion(el.value, "la condición de las unidades"); }]);
+          return reglas;
+        });
         form.addEventListener("submit", function (e) {
           e.preventDefault();
+          if (!form.validarTodo()) return;
           enviarUnaVez(form, function () {
             var f = new FormData(form);
             var c = f.get("cantidad");
@@ -689,11 +818,12 @@
       if (b.dataset.accion === "cerrar-obs") { abierta = null; render(); }
     });
     $$(".form-conteo", v).forEach(function (form) {
+      validador(form, function () { return [[form.conteo, function (el) { return RCV.conteo(el.value); }]]; });
       form.addEventListener("submit", function (e) {
         e.preventDefault();
+        if (!form.validarTodo()) return;
         enviarUnaVez(form, function () {
           var p = form.dataset.k.split("|"), val = form.conteo.value;
-          if (val === "") { var er = new Error("Escribe el conteo físico (0 si no hay unidades)."); er.campo = "conteo"; throw er; }
           var f = RC.guardarConteo(p[0], p[1], filtro.periodo, Number(val));
           var msg = "Conteo guardado: " + f.conteo + " u. de " + producto(f.productoId).nombre + ". ";
           msg += f.diferencia === 0 ? "Conciliado." : (f.diferencia < 0 ? "Faltan " + (-f.diferencia) + " u. por revisar." : "Sobran " + f.diferencia + " u. por revisar.");
@@ -707,8 +837,12 @@
     if (fo) {
       var modo = "guardar";
       $$('[type="submit"]', fo).forEach(function (b) { b.addEventListener("click", function () { modo = b.dataset.modo; }); });
+      validador(fo, function () {
+        return [[fo.observacion, function (el) { return modo === "reabrir" ? RCV.texto(el.value, 5, 200, "la observación", true) : RCV.observacion(el.value); }]];
+      });
       fo.addEventListener("submit", function (e) {
         e.preventDefault();
+        if (!fo.validarTodo()) return;
         enviarUnaVez(fo, function () {
           var p = fo.dataset.k.split("|");
           var marcar = modo === "revisar" ? true : (modo === "reabrir" ? false : undefined);
@@ -836,6 +970,18 @@
       $("#grupo-tienda", v).hidden = p !== "tienda";
     }
     form.perfil.addEventListener("change", mostrarGrupos);
+    validador(form, function () {
+      var p = form.perfil.value;
+      var reglas = [
+        [form.nombre, function (el) { return RCV.nombrePersona(el.value, { apellido: true, etiqueta: "el nombre y apellido" }); }],
+        [form.correo, function (el) { return RCV.correo(el.value, function (s) { return RC.usuarios().some(function (u) { return u.correo.toLowerCase() === s && u.id !== edicion.usuario; }); }); }],
+        [form.celular, function (el) { return RCV.telefono(el.value, true); }],
+        [form.perfil, function (el) { return RCV.seleccion(el.value, "el perfil"); }]
+      ];
+      if (p === "repartidor") reglas.push([$('[data-campo="tiendas"]', form), function (el) { return $$("input:checked", el).length ? "" : "Asigna al menos una tienda a la ruta del repartidor."; }]);
+      if (p === "tienda") reglas.push([form.tiendaId, function (el) { return RCV.seleccion(el.value, "la tienda vinculada"); }]);
+      return reglas;
+    });
     v.addEventListener("click", function (e) {
       var b = e.target.closest("[data-accion]");
       if (!b) return;
@@ -852,6 +998,7 @@
     });
     form.addEventListener("submit", function (e) {
       e.preventDefault();
+      if (!form.validarTodo()) return;
       enviarUnaVez(form, function () {
         var nuevo = !edicion.usuario;
         var previo = nuevo ? null : RC.porId(RC.get().usuarios, edicion.usuario);
