@@ -605,8 +605,11 @@
       chk(V.ajustePct(r.ajustePct), "ajustePct");
       var pct = Number(String(r.ajustePct).replace(",", "."));
       chk(V.ajusteNombre(r.ajusteNombre, pct), "ajusteNombre");
+      chk(V.latitud(r.lat), "lat");
+      chk(V.longitud(r.lng), "lng");
       var datos = { nombre: nombre, direccion: String(r.direccion).trim(), contacto: String(r.contacto).trim().replace(/\s+/g, " "), telefono: V.limpiarTelefono(r.telefono),
-        ajustePct: pct, ajusteNombre: String(r.ajusteNombre || "").trim() || "Sin ajuste pactado", activa: r.activa !== false };
+        ajustePct: pct, ajusteNombre: String(r.ajusteNombre || "").trim() || "Sin ajuste pactado", activa: r.activa !== false,
+        lat: Number(String(r.lat).replace(",", ".")), lng: Number(String(r.lng).replace(",", ".")) };
       if (r.id) { var t = porId(estado.tiendas, r.id); Object.assign(t, datos); registrar("catalogo", "Tienda editada: " + t.nombre); guardar(); return t; }
       var n = Object.assign({ id: nuevoId("T") }, datos);
       estado.tiendas.push(n); registrar("catalogo", "Tienda creada: " + n.nombre); guardar(); return n;

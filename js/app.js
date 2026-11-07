@@ -18,7 +18,8 @@
     { id: "dinero", nombre: "¿Dónde está mi dinero?", icono: "i-dinero", perfiles: ["admin", "contador"] },
     { id: "impacto", nombre: "Impacto económico", icono: "i-impacto", perfiles: ["admin", "contador"] },
     { id: "usuarios", nombre: "Usuarios", icono: "i-usuarios", perfiles: ["admin"] },
-    { id: "bitacora", nombre: "Bitácora", icono: "i-bitacora", perfiles: ["admin", "contador"] }
+    { id: "bitacora", nombre: "Bitácora", icono: "i-bitacora", perfiles: ["admin", "contador"] },
+    { id: "pronto", nombre: "Próximamente", icono: "i-pronto", perfiles: ["admin", "repartidor", "contador", "tienda"] }
   ];
 
   var CONDICIONES = { apta: "Apta para reventa", danada: "Dañada", vencida: "Vencida" };
@@ -246,6 +247,21 @@
   }
 
   // ---------------- Navegación ----------------
+  // Barra inferior del celular: 4 accesos según el perfil y «Más» (abre el menú completo).
+  var BARRA_INFERIOR = {
+    admin: ["inicio", "entregas", "conciliacion", "dinero"],
+    repartidor: ["inicio", "ruta", "entregas", "conciliacion"],
+    contador: ["inicio", "conciliacion", "liquidacion", "dinero"],
+    tienda: ["inicio", "entregas", "conciliacion", "liquidacion"]
+  };
+  var CORTO = { inicio: "Inicio", entregas: "Entregas", conciliacion: "Conciliar", dinero: "Mi dinero", ruta: "Mi ruta", liquidacion: "Liquidar" };
+  function pintarBarraInferior(actual) {
+    var ids = BARRA_INFERIOR[usuario.perfil] || [];
+    $("#nav-inferior").innerHTML = ids.map(function (id) {
+      var m = MODULOS.filter(function (x) { return x.id === id; })[0];
+      return '<a href="#/' + id + '" class="nav-inf' + (actual.id === id ? " activo" : "") + '"' + (actual.id === id ? ' aria-current="page"' : "") + ">" + ico(m.icono) + "<span>" + CORTO[id] + "</span></a>";
+    }).join("") + '<button class="nav-inf' + (ids.indexOf(actual.id) < 0 ? " activo" : "") + '" data-accion="menu" aria-label="Más opciones">' + ico("i-menu") + "<span>Más</span></button>";
+  }
   // Un módulo sin permiso no se abre aunque se escriba en la dirección: se avisa y se vuelve a Inicio.
   function moduloActual() {
     var id = (location.hash || "").replace(/^#\/?/, "").split("?")[0] || "inicio";
@@ -279,6 +295,7 @@
     limpiarMapas();
     var m = moduloActual();
     pintarNav(m);
+    pintarBarraInferior(m);
     pintarEtiquetaDemo();
     pintarContexto();
     document.title = m.nombre + " · ReCuenta";
@@ -474,6 +491,13 @@
       campo("Nombre de la tienda *", '<input name="nombre" required maxlength="60" value="' + esc(t ? t.nombre : "") + '" placeholder="Ej.: Despensa La Esquina">') +
       campo("Persona de contacto *", '<input name="contacto" maxlength="60" autocomplete="off" value="' + esc(t ? t.contacto : "") + '" placeholder="Ej.: Rosa Mendoza">') +
       campo("Dirección *", '<input name="direccion" maxlength="90" value="' + esc(t ? t.direccion : "") + '" placeholder="Calle, sector, Milagro">', "ancho") +
+      '<div class="campo ancho ubicacion-tienda"><span>Ubicación en el mapa *</span><div class="ubic-botones">' +
+      '<button type="button" class="btn btn-secundario btn-mini" data-accion="buscar-direccion">' + ico("i-ubicacion") + 'Buscar en el mapa</button>' +
+      '<button type="button" class="btn btn-secundario btn-mini" data-accion="tienda-gps">' + ico("i-ruta") + 'Usar mi ubicación</button></div>' +
+      '<p class="ayuda" id="ubic-estado">Busca la dirección o toca el mapa para marcar la tienda. Puedes arrastrar el marcador para ajustar el punto.</p>' +
+      '<div class="mapa mapa-chico" id="mapa-tienda" role="application" aria-label="Mapa para ubicar la tienda"></div></div>' +
+      campo("Latitud *", '<input name="lat" inputmode="decimal" maxlength="12" value="' + (t && isFinite(t.lat) ? t.lat : "") + '" placeholder="-2.134">') +
+      campo("Longitud *", '<input name="lng" inputmode="decimal" maxlength="12" value="' + (t && isFinite(t.lng) ? t.lng : "") + '" placeholder="-79.588">') +
       campo("Celular o teléfono *", '<input name="telefono" type="tel" inputmode="tel" maxlength="10" value="' + esc(t ? t.telefono : "") + '" placeholder="09XXXXXXXX o 04XXXXXXX">') +
       campo("Estado", '<select name="activa"><option value="1">Activa</option><option value="0"' + (t && !t.activa ? " selected" : "") + ">Inactiva</option></select>") +
       campo("Ajuste pactado (%) *", '<input name="ajustePct" type="number" inputmode="decimal" min="0" max="50" step="0.1" value="' + (t ? t.ajustePct : 0) + '">') +
@@ -548,9 +572,12 @@
         [ft.direccion, function (el) { return RCV.direccion(el.value); }],
         [ft.telefono, function (el) { return RCV.telefono(el.value); }],
         [ft.ajustePct, function (el) { return RCV.ajustePct(el.value); }],
-        [ft.ajusteNombre, function (el) { return RCV.ajusteNombre(el.value, ft.ajustePct.value); }]
+        [ft.ajusteNombre, function (el) { return RCV.ajusteNombre(el.value, ft.ajustePct.value); }],
+        [ft.lat, function (el) { return RCV.latitud(el.value); }],
+        [ft.lng, function (el) { return RCV.longitud(el.value); }]
       ];
     });
+    if (ft) enlazarMapaTienda(ft, v);
     if (ft) ft.addEventListener("submit", function (e) {
       e.preventDefault();
       if (!ft.validarTodo()) return;
@@ -558,7 +585,7 @@
         var f = new FormData(ft);
         var nuevo = !edicion.tienda;
         var t = RC.guardarTienda({ id: edicion.tienda, nombre: f.get("nombre"), contacto: f.get("contacto"), direccion: f.get("direccion"), telefono: f.get("telefono"),
-          ajustePct: f.get("ajustePct") === "" ? 0 : f.get("ajustePct"), ajusteNombre: f.get("ajusteNombre"), activa: f.get("activa") === "1" });
+          ajustePct: f.get("ajustePct") === "" ? 0 : f.get("ajustePct"), ajusteNombre: f.get("ajusteNombre"), activa: f.get("activa") === "1", lat: f.get("lat"), lng: f.get("lng") });
         edicion.tienda = null;
         toast(nuevo ? "Tienda «" + t.nombre + "» agregada." : "Cambios guardados en «" + t.nombre + "».");
         render();
@@ -1349,6 +1376,95 @@
     };
   }
 
+  // Mapa del formulario de tienda: búsqueda (Nominatim), marcador arrastrable, clic en el mapa y GPS del dispositivo.
+  var CENTRO_MILAGRO = { lat: -2.134, lng: -79.588 };
+  var buscando = false;
+  function enlazarMapaTienda(ft, v) {
+    var inicial = isFinite(parseFloat(ft.lat.value)) && isFinite(parseFloat(ft.lng.value)) ? { lat: parseFloat(ft.lat.value), lng: parseFloat(ft.lng.value) } : null;
+    var m = crearMapa($("#mapa-tienda", v), inicial || CENTRO_MILAGRO, inicial ? 17 : 14);
+    var marcador = null, estado = $("#ubic-estado", v);
+    function fijar(lat, lng, mover) {
+      lat = Math.round(lat * 1e6) / 1e6; lng = Math.round(lng * 1e6) / 1e6;
+      ft.lat.value = lat; ft.lng.value = lng;
+      ft.lat.dispatchEvent(new Event("change", { bubbles: true })); ft.lng.dispatchEvent(new Event("change", { bubbles: true }));
+      if (!m) return;
+      if (!marcador) {
+        marcador = L.marker([lat, lng], { draggable: true, autoPan: true }).addTo(m);
+        marcador.on("dragend", function () { var p = marcador.getLatLng(); fijar(p.lat, p.lng, false); estado.textContent = "Punto ajustado a mano."; });
+      } else marcador.setLatLng([lat, lng]);
+      if (mover) m.setView([lat, lng], 17, { animate: false });
+    }
+    if (m) {
+      if (inicial) fijar(inicial.lat, inicial.lng, false);
+      m.on("click", function (e) { fijar(e.latlng.lat, e.latlng.lng, false); estado.textContent = "Punto marcado en el mapa."; });
+    }
+    // Escribir la latitud o la longitud mueve el marcador si el valor es válido.
+    [ft.lat, ft.lng].forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        var la = ft.lat.value.replace(",", "."), lo = ft.lng.value.replace(",", ".");
+        if (!RCV.latitud(la) && !RCV.longitud(lo) && m) { if (!marcador) fijar(Number(la), Number(lo), true); else { marcador.setLatLng([Number(la), Number(lo)]); m.panTo([Number(la), Number(lo)], { animate: false }); } }
+      });
+    });
+    v.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-accion]");
+      if (!b) return;
+      if (b.dataset.accion === "buscar-direccion") {
+        var dir = ft.direccion.value.trim();
+        var err = RCV.direccion(dir);
+        if (err) { marcarCampo(ft.direccion, err); enfocar(ft.direccion); return; }
+        if (buscando) return;                       // una consulta a la vez
+        buscando = true; b.disabled = true;
+        estado.className = "ayuda"; estado.textContent = "Buscando la dirección en el mapa…";
+        var q = /milagro/i.test(dir) ? dir : dir + ", Milagro";
+        var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ec&accept-language=es&viewbox=-79.66,-2.08,-79.52,-2.19&bounded=0&q=" + encodeURIComponent(q);
+        fetch(url, { headers: { "Accept": "application/json" } }).then(function (r) { if (!r.ok) throw new Error("http"); return r.json(); }).then(function (res) {
+          if (!res.length) { estado.className = "ayuda aviso-ubic"; estado.textContent = "No encontramos esa dirección. Toca el mapa o arrastra el marcador para ubicar la tienda a mano."; return; }
+          fijar(Number(res[0].lat), Number(res[0].lon), true);
+          estado.className = "ayuda"; estado.textContent = "Encontrado: " + res[0].display_name.split(",").slice(0, 3).join(",") + ". Ajusta el marcador si hace falta.";
+        }).catch(function () {
+          estado.className = "ayuda aviso-ubic"; estado.textContent = "No se pudo consultar el mapa (revisa la conexión). Marca la tienda a mano en el mapa.";
+        }).then(function () { buscando = false; b.disabled = false; });
+      }
+      if (b.dataset.accion === "tienda-gps") {
+        b.disabled = true; estado.className = "ayuda"; estado.textContent = "Obteniendo tu ubicación…";
+        obtenerUbicacion(function (p) { b.disabled = false; fijar(p.lat, p.lng, true); estado.textContent = "Ubicación del dispositivo" + (p.simulada ? " (simulada)" : " (±" + Math.round(p.precision) + " m)") + ". Arrastra el marcador si hace falta."; },
+          function (msg) { b.disabled = false; estado.className = "ayuda aviso-ubic"; estado.textContent = msg + " Marca la tienda a mano en el mapa."; });
+      }
+    });
+  }
+
+  // ================= PRÓXIMAMENTE =================
+  VISTAS.pronto = function () {
+    var items = [
+      ["i-dinero", "Pago de la tienda con Deuna! o transferencia por QR", "La tienda pagaría su liquidación desde el celular y el pago se conciliaría solo."],
+      ["i-restaurar", "Sincronización en la nube entre dispositivos", "Hoy cada navegador guarda su propia copia y el seguimiento es simulado en el mismo dispositivo. Con un servidor, la distribuidora y la tienda verían los cambios al instante desde celulares distintos."],
+      ["i-liquidacion", "Facturación electrónica del SRI", "Emitir la factura de cada liquidación cerrada directamente al SRI."],
+      ["i-descargar", "Instalar como app", "Agregar ReCuenta a la pantalla de inicio y abrirla sin conexión."]
+    ];
+    return encabezado("Próximamente", "Lo que este prototipo todavía no hace. Lo mostramos tal cual para que nadie lo confunda con una función activa.") +
+      '<section class="tarjeta"><ul class="pronto">' + items.map(function (x) {
+        return '<li><span class="kpi-ico">' + ico(x[0]) + "</span><div><strong>" + x[1] + '</strong><p class="ayuda">' + x[2] + '</p></div><span class="estado estado-gris">En planificación</span></li>';
+      }).join("") + "</ul></section>";
+  };
+
+  // ================= COMPARTIR (QR de la dirección actual) =================
+  function urlPublica() { return location.origin + location.pathname; }
+  function abrirCompartir() {
+    var url = urlPublica(), qr = "";
+    try { var q = qrcode(0, "M"); q.addData(url); q.make(); qr = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true, alt: "Código QR de " + url }); }
+    catch (e) { qr = '<p class="ayuda">No se pudo generar el código QR.</p>'; }
+    abrirDetalle('<h3 id="detalle-titulo">Compartir ReCuenta</h3><p class="ayuda">Escanea el código con la cámara del celular o copia el enlace.</p>' +
+      '<div class="qr">' + qr + '</div><div class="copiar"><input id="url-compartir" readonly value="' + esc(url) + '" aria-label="Enlace de ReCuenta">' +
+      '<button class="btn btn-primario" data-accion="copiar-enlace">Copiar enlace</button></div>' +
+      '<div class="modal-acciones"><button class="btn btn-secundario" data-accion="cerrar-detalle">Cerrar</button></div>');
+  }
+  function copiarEnlace() {
+    var inp = $("#url-compartir"), txt = inp.value;
+    function hecho() { toast("Enlace copiado."); }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(txt).then(hecho, function () { inp.select(); document.execCommand("copy"); hecho(); });
+    else { inp.select(); document.execCommand("copy"); hecho(); }
+  }
+
   // ================= ¿DÓNDE ESTÁ MI DINERO? (administrador y contador) =================
   function resumenDinero(per) {
     var ind = tiendasVisibles().filter(function (t) { return t.activa; }).map(function (t) { var i = RC.indicadoresTienda(t.id, per); i.tienda = t.nombre; return i; });
@@ -1693,6 +1809,8 @@
     if (a === "cerrar-selector") $("#selector-usuario").hidden = true;
     if (a === "comprobante") abrirComprobante(b.dataset.id);
     if (a === "cerrar-detalle") cerrarDetalle();
+    if (a === "compartir") { document.body.classList.remove("menu-abierto"); abrirCompartir(); }
+    if (a === "copiar-enlace") copiarEnlace();
     if (a === "confirmar-recepcion") {
       try { RC.confirmarRecepcion(b.dataset.id); toast("Recepción confirmada. Queda registrada en la bitácora."); render(); abrirComprobante(b.dataset.id); }
       catch (err) { toast(err.message, "error"); }

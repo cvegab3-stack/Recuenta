@@ -437,3 +437,27 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
 .interruptor input:checked + .interruptor-pista::after { transform: translateX(20px); }
 .interruptor input:focus-visible + .interruptor-pista { outline: 3px solid var(--ambar); outline-offset: 2px; }
 @media (max-width: 640px) { .demo-control { grid-template-columns: 1fr; } .mapa { height: 280px; } }
+
+/* ---------- Ubicación de la tienda, Próximamente, Compartir y barra inferior ---------- */
+.ubic-botones { display: flex; flex-wrap: wrap; gap: 8px; }
+.ubicacion-tienda .mapa { margin: 4px 0 0; }
+.aviso-ubic { color: #6D3A00; background: var(--ambar-claro); padding: 6px 10px; border-radius: 8px; }
+.pronto { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pronto li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--verde-100); border-radius: 10px; }
+.pronto p { margin: 4px 0 0; }
+.qr { display: grid; place-items: center; margin: 12px auto; width: min(260px, 100%); }
+.qr svg { width: 100%; height: auto; }
+.copiar { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 14px; }
+.nav-inferior { display: none; }
+.btn, .btn-mini, input, select, textarea, .btn-icono { min-height: 44px; }
+.tabla .btn-mini { min-height: 36px; }
+@media (max-width: 900px) {
+  .nav-inferior { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: #fff; border-top: 1px solid var(--borde); box-shadow: 0 -4px 16px rgba(20,40,34,.08); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+  .nav-inf { display: grid; justify-items: center; gap: 2px; min-height: 52px; padding: 6px 2px; color: var(--texto-suave); text-decoration: none; font: inherit; font-size: .72rem; font-weight: 600; background: none; border: 0; border-radius: 10px; cursor: pointer; }
+  .nav-inf .ico { width: 22px; height: 22px; }
+  .nav-inf.activo { color: var(--verde-800); background: var(--verde-100); }
+  .vista { padding-bottom: 96px; }
+  .toasts { bottom: 76px; }
+  .pronto li { grid-template-columns: auto 1fr; }
+  .pronto li .estado { grid-column: 2; justify-self: start; }
+}

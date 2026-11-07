@@ -39,6 +39,8 @@
     <symbol id="i-usuarios" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14a5 5 0 0 1 4.5 5"/></symbol>
     <symbol id="i-ubicacion" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
     <symbol id="i-whatsapp" viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19.1z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .9c-1-.4-2.2-1.6-2.6-2.6l.9-1-1-2z"/></symbol>
+    <symbol id="i-pronto" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></symbol>
+    <symbol id="i-compartir" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></symbol>
     <symbol id="i-ruta" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/></symbol>
     <symbol id="i-dinero" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/></symbol>
     <symbol id="i-impacto" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
@@ -100,6 +102,7 @@
       </div>
       <nav class="nav" id="nav" aria-label="Módulos"></nav>
       <div class="lateral-pie">
+        <button class="btn-nav" data-accion="compartir"><svg class="ico"><use href="#i-compartir"/></svg><span>Compartir (QR)</span></button>
         <button class="btn-nav" data-accion="restaurar"><svg class="ico"><use href="#i-restaurar"/></svg><span>Restaurar datos de ejemplo</span></button>
         <button class="btn-nav" data-accion="salir"><svg class="ico"><use href="#i-salir"/></svg><span>Cerrar sesión</span></button>
       </div>
@@ -118,6 +121,7 @@
         <div class="usuario" id="usuario"></div>
       </header>
       <main id="vista" class="vista" tabindex="-1"></main>
+      <nav id="nav-inferior" class="nav-inferior" aria-label="Accesos rápidos"></nav>
     </div>
   </div>
 
@@ -153,6 +157,7 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/qrcode/qrcode.js"></script>
   <script src="js/datos-demo.js"></script>
   <script src="js/validacion.js"></script>
   <script src="js/store.js"></script>
