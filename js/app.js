@@ -14,6 +14,7 @@
     { id: "devoluciones", nombre: "Devoluciones", icono: "i-devoluciones", perfiles: ["admin", "repartidor", "tienda"] },
     { id: "conciliacion", nombre: "Conciliación", icono: "i-conciliacion", perfiles: ["admin", "repartidor", "contador", "tienda"] },
     { id: "liquidacion", nombre: "Liquidación", icono: "i-liquidacion", perfiles: ["admin", "contador", "tienda"] },
+    { id: "impacto", nombre: "Impacto económico", icono: "i-impacto", perfiles: ["admin", "contador"] },
     { id: "usuarios", nombre: "Usuarios", icono: "i-usuarios", perfiles: ["admin"] },
     { id: "bitacora", nombre: "Bitácora", icono: "i-bitacora", perfiles: ["admin", "contador"] }
   ];
@@ -1122,6 +1123,67 @@
         });
       }
     });
+  };
+
+  // ================= IMPACTO ECONÓMICO (administrador y contador) =================
+  var simHoras = 6, simAnios = 3;
+  function barra(valor, max, cls) { return '<span class="barra-cmp ' + (cls || "") + '"><span style="width:' + Math.max(2, Math.round(valor / max * 100)) + '%"></span></span>'; }
+  VISTAS.impacto = function () {
+    var ind = RCE.indicadores(), antes = RCE.antes(), desp = RCE.despues(6);
+    var tA = RCE.suma(antes), tD = RCE.suma(desp), max = Math.max(tA, tD);
+    var k = '<div class="kpis">' +
+      kpiFijo("CAUE con ReCuenta", usd(RCE.caueReCuenta(6)), "Costo anual uniforme equivalente", "i-impacto") +
+      kpiFijo("CAUE del proceso actual", usd(RCE.caueActual()), "Hojas de cálculo", "i-liquidacion") +
+      kpiFijo("Ventaja anual", usd(RCE.simular(6).ventaja), "A favor de ReCuenta", "i-ok", "kpi-dinero") +
+      kpiFijo("TIR", String(ind.tir).replace(".", ",") + " %", "Mayor que la tasa del 10 %", "i-flecha") +
+      "</div>" +
+      '<div class="chips-ind"><span class="chip chip-abierto">B/C ' + String(ind.bc).replace(".", ",") + '</span><span class="chip chip-abierto">Payback ' + String(ind.payback).replace(".", ",") + ' años</span>' +
+      '<span class="chip chip-abierto">Vida útil económica ' + ind.vidaUtil + ' años (CAUE mínimo ' + usd(ind.caueMinimo) + ')</span><span class="chip chip-abierto">P = ' + usd(RCE.INVERSION.P) + " · S = " + usd(RCE.INVERSION.S) + " · N = " + RCE.INVERSION.N + " · i = 10 %</span></div>";
+
+    var filas = antes.map(function (a, i) {
+      var d = desp[i];
+      return "<tr><td>" + esc(a.concepto) + (a.detalle ? "<small class='sub'>Antes: " + a.detalle + "</small>" : "") + (d.concepto !== a.concepto ? "<small class='sub'>Después: " + esc(d.concepto) + "</small>" : (d.detalle ? "<small class='sub'>Después: " + d.detalle + "</small>" : "")) +
+        "</td><td class='num'>" + usd(a.valor) + barra(a.valor, max, "barra-antes") + "</td><td class='num'>" + usd(d.valor) + barra(d.valor, max, "barra-despues") + "</td></tr>";
+    }).join("");
+    var tabla = '<section class="tarjeta"><h2 class="tarjeta-titulo">Costos anuales: antes y después</h2><div class="tabla-envoltura"><table class="tabla tabla-impacto"><thead><tr><th>Concepto</th><th class="num">Antes (hojas de cálculo)</th><th class="num">Después (con ReCuenta)</th></tr></thead><tbody>' + filas +
+      "</tbody><tfoot><tr class='total'><td>Total al año</td><td class='num'>" + usd(tA) + barra(tA, max, "barra-antes") + "</td><td class='num'>" + usd(tD) + barra(tD, max, "barra-despues") + "</td></tr></tfoot></table></div>" +
+      '<p class="ayuda">CAUE de ReCuenta = (P − S)(A/P, 10 %, 5) + S·i + costo anual = (7.000 − 500)(0,2638) + 50 + 3.876.</p></section>';
+
+    var sim = '<section class="tarjeta"><h2 class="tarjeta-titulo">Simulador: horas semanales de conciliación con ReCuenta</h2>' +
+      '<label class="deslizador"><span>Horas por semana: <b id="sim-h">' + simHoras + '</b></span><input type="range" id="sim-horas" min="4" max="15" step="1" value="' + simHoras + '" aria-label="Horas semanales con ReCuenta"></label>' +
+      '<div id="sim-res"></div><p class="ayuda">Punto de equilibrio: <b>' + num(Math.round(RCE.equilibrioHoras())) + " h</b> por semana (" + String(RCE.equilibrioHoras().toFixed(2)).replace(".", ",") + " h). Desde ahí, ReCuenta deja de convenir.</p></section>";
+
+    var tablaN = [1, 2, 3, 4, 5].map(function (n) { var c = RCE.comparar(n); return '<tr data-n="' + n + '"><td>' + n + "</td><td class='num'>" + usd(c.residual) + "</td><td class='num'>" + usd(c.compra) + "</td><td class='num'>" + usd(c.suscripcion) + "</td><td>" + (c.conviene === "compra" ? "Compra" : "Suscripción") + "</td></tr>"; }).join("");
+    var memb = '<section class="tarjeta"><h2 class="tarjeta-titulo">¿Compra o suscripción («membresía»)?</h2>' +
+      '<p class="ayuda">Compra: ' + usd(7000) + " + " + usd(1500) + " al año de licencia y soporte. Suscripción: " + usd(500) + " de activación + " + usd(280) + " al mes.</p>" +
+      '<label class="deslizador"><span>Años de uso: <b id="memb-n">' + simAnios + '</b></span><input type="range" id="memb-anios" min="1" max="5" step="1" value="' + simAnios + '" aria-label="Años de uso"></label>' +
+      '<div id="memb-res"></div><div class="tabla-envoltura"><table class="tabla tabla-memb"><thead><tr><th>Años</th><th class="num">Valor residual</th><th class="num">CAUE compra</th><th class="num">CAUE suscripción</th><th>Conviene</th></tr></thead><tbody>' + tablaN + "</tbody></table></div>" +
+      '<p class="ayuda">CAUE compra(n) = (7.000 − Sₙ)(A/P, 10 %, n) + Sₙ·0,10 + 3.876. CAUE suscripción(n) = 500·(A/P, 10 %, n) + 2.376 + 3.360.</p></section>';
+
+    return encabezado("Impacto económico", "Qué cambia para la distribuidora al pasar de hojas de cálculo a ReCuenta.") + k + tabla + sim + memb +
+      '<p class="nota nota-info">' + ico("i-alerta") + "Cifras del archivo Calculos_ReCuenta.xlsx (supuestos académicos).</p>";
+  };
+  function kpiFijo(t, v, s, icono, cls) {
+    return '<div class="kpi ' + (cls || "") + '"><span class="kpi-ico">' + ico(icono) + '</span><span class="kpi-txt"><span class="kpi-titulo">' + t + '</span><span class="kpi-valor">' + v + '</span><span class="kpi-sub">' + s + "</span></span></div>";
+  }
+  ENLACES.impacto = function (v) {
+    function pintarSim() {
+      var r = RCE.simular(simHoras);
+      $("#sim-h", v).textContent = simHoras;
+      $("#sim-res", v).innerHTML = '<div class="sim-res ' + (r.ventaja > 0 ? "sim-si" : "sim-no") + '"><div><span class="sub">CAUE con ReCuenta</span><b id="sim-caue">' + usd(r.caue) + "</b></div>" +
+        '<div><span class="sub">CAUE actual</span><b>' + usd(r.actual) + '</b></div><div><span class="sub">Ventaja anual</span><b id="sim-ventaja">' + usd(r.ventaja) + "</b></div>" +
+        '<div class="sim-decision"><span class="sub">Decisión</span><b id="sim-decision">' + r.decision + "</b></div></div>";
+    }
+    function pintarMemb() {
+      var c = RCE.comparar(simAnios);
+      $("#memb-n", v).textContent = simAnios;
+      $("#memb-res", v).innerHTML = '<div class="sim-res sim-si"><div><span class="sub">CAUE compra</span><b id="memb-compra">' + usd(c.compra) + '</b></div><div><span class="sub">CAUE suscripción</span><b id="memb-susc">' + usd(c.suscripcion) + "</b></div>" +
+        '<div class="sim-decision"><span class="sub">Conviene</span><b id="memb-conviene">' + (c.conviene === "compra" ? "la compra" : "la suscripción") + "</b><small class='sub'>Ahorra " + usd(c.diferencia) + " al año</small></div></div>";
+      $$(".tabla-memb tr[data-n]", v).forEach(function (tr) { tr.classList.toggle("fila-editando", Number(tr.dataset.n) === simAnios); });
+    }
+    $("#sim-horas", v).addEventListener("input", function (e) { simHoras = Number(e.target.value); pintarSim(); });
+    $("#memb-anios", v).addEventListener("input", function (e) { simAnios = Number(e.target.value); pintarMemb(); });
+    pintarSim(); pintarMemb();
   };
 
   // ================= USUARIOS (solo administrador) =================

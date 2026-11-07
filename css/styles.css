@@ -368,3 +368,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
 .tabla-conciliacion .sub { white-space: nowrap; }
 .col-estado { min-width: 170px; }
 .col-estado .obs { margin-top: 6px; }
+
+/* ---------- Impacto económico ---------- */
+.chips-ind { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 20px; }
+.barra-cmp { display: block; height: 8px; border-radius: 4px; background: #EEF2F0; margin-top: 4px; min-width: 90px; }
+.barra-cmp > span { display: block; height: 100%; border-radius: 4px; }
+.barra-antes > span { background: #C9874A; }
+.barra-despues > span { background: var(--verde-600); }
+.deslizador { display: grid; gap: 6px; font-weight: 600; color: var(--verde-900); margin-bottom: 12px; }
+.deslizador input[type=range] { padding: 0; border: 0; accent-color: var(--verde-800); height: 32px; }
+.sim-res { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
+.sim-res b { display: block; font-size: 1.15rem; color: var(--verde-900); }
+.sim-si { background: #DDEEE3; }
+.sim-no { background: var(--rojo-claro); }
+.sim-no .sim-decision b { color: var(--rojo); }
+.tabla-memb .fila-editando td { font-weight: 700; }
+@media (max-width: 640px) { .sim-res { grid-template-columns: 1fr 1fr; } }
