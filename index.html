@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReCuenta · Gestión de consignaciones</title>
+  <meta name="description" content="ReCuenta: prototipo de software para gestionar y conciliar mercadería en consignación. Demostración con datos ficticios.">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Iconos locales (línea, 24 px) -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-inicio" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+    <symbol id="i-catalogo" viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></symbol>
+    <symbol id="i-entregas" viewBox="0 0 24 24"><path d="M2 6h11v10H2z"/><path d="M13 9h4l3 3v4h-7"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-ventas" viewBox="0 0 24 24"><path d="M3 4h2l2.4 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></symbol>
+    <symbol id="i-devoluciones" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-conciliacion" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-3 7a3 3 0 0 0 6 0z"/><path d="M19 7l-3 7a3 3 0 0 0 6 0z"/><path d="M8 21h8"/></symbol>
+    <symbol id="i-liquidacion" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></symbol>
+    <symbol id="i-salir" viewBox="0 0 24 24"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></symbol>
+    <symbol id="i-admin" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 11-7.4"/><circle cx="18.5" cy="17.5" r="2.5"/><path d="M18.5 13.5v1.5M18.5 20v1.5M22.5 17.5H21M16 17.5h-1.5"/></symbol>
+    <symbol id="i-repartidor" viewBox="0 0 24 24"><circle cx="8" cy="6" r="3"/><path d="M3 20a5 5 0 0 1 10 0"/><path d="M14 10h6v7h-6z"/><path d="M14 13h6"/></symbol>
+    <symbol id="i-contador" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8v4H8z"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></symbol>
+    <symbol id="i-mas" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-editar" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+    <symbol id="i-borrar" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-descargar" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-imprimir" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 14h10v7H7z"/></symbol>
+    <symbol id="i-restaurar" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 1 0 1.6-7.4L4 10"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-alerta" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/></symbol>
+    <symbol id="i-candado" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-cerrar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-flecha" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></symbol>
+  </svg>
+
+  <div id="aviso-almacenamiento" class="aviso-global" hidden>
+    <svg class="ico"><use href="#i-alerta"/></svg>
+    <span>Este navegador no permite guardar datos al abrir el archivo directamente. Los cambios se perderán al recargar.
+      Abre ReCuenta con un servidor local (por ejemplo, la extensión Live Server de VS Code) o desde su enlace de GitHub Pages.</span>
+  </div>
+
+  <!-- ===================== ACCESO ===================== -->
+  <section id="pantalla-acceso" class="acceso" hidden>
+    <div class="acceso-fondo" aria-hidden="true"></div>
+    <div class="acceso-panel" role="dialog" aria-labelledby="acceso-titulo">
+      <h1 id="acceso-titulo" class="acceso-titulo">Perfiles</h1>
+      <p class="acceso-sub">Selecciona tu perfil para iniciar sesión en</p>
+      <img class="acceso-logo" src="assets/recuenta-logo.svg" alt="ReCuenta. Cada entrega, cada venta, cada cuenta" width="340" height="84">
+      <p class="acceso-desc">Distribuidores, repartidores y contadores · Gestión de mercadería en consignación</p>
+
+      <div class="perfiles">
+        <article class="perfil">
+          <svg class="perfil-ico"><use href="#i-admin"/></svg>
+          <h2>Administrador</h2>
+          <p>Configura tiendas, productos y precios, y supervisa todo el flujo.</p>
+          <button class="btn btn-primario" data-accion="entrar" data-perfil="admin">Ingresar</button>
+        </article>
+        <article class="perfil">
+          <svg class="perfil-ico"><use href="#i-repartidor"/></svg>
+          <h2>Repartidor</h2>
+          <p>Registra entregas, ventas reportadas, devoluciones y conteos en ruta.</p>
+          <button class="btn btn-primario" data-accion="entrar" data-perfil="repartidor">Ingresar</button>
+        </article>
+        <article class="perfil">
+          <svg class="perfil-ico"><use href="#i-contador"/></svg>
+          <h2>Contador</h2>
+          <p>Revisa diferencias, genera la liquidación y la exporta para cobrar.</p>
+          <button class="btn btn-primario" data-accion="entrar" data-perfil="contador">Ingresar</button>
+        </article>
+      </div>
+
+      <details class="acceso-credenciales">
+        <summary>Ingresar con correo y contraseña de demostración</summary>
+        <form id="form-login" class="form-login" novalidate>
+          <label>Correo <input name="correo" type="email" autocomplete="username" required placeholder="admin@recuenta.demo"></label>
+          <label>Contraseña <input name="clave" type="password" autocomplete="current-password" required placeholder="admin123"></label>
+          <button class="btn btn-primario" type="submit">Iniciar sesión</button>
+          <p class="error-form" id="login-error" role="alert"></p>
+        </form>
+        <table class="tabla tabla-mini">
+          <thead><tr><th>Perfil</th><th>Correo</th><th>Contraseña</th></tr></thead>
+          <tbody>
+            <tr><td>Administrador</td><td>admin@recuenta.demo</td><td>admin123</td></tr>
+            <tr><td>Repartidor</td><td>repartidor@recuenta.demo</td><td>ruta123</td></tr>
+            <tr><td>Contador</td><td>contador@recuenta.demo</td><td>cuenta123</td></tr>
+          </tbody>
+        </table>
+      </details>
+      <p class="acceso-nota">Demostración académica con datos ficticios. Los cambios se guardan solo en este navegador.</p>
+    </div>
+  </section>
+
+  <!-- ===================== APLICACIÓN ===================== -->
+  <div id="app" class="app" hidden>
+    <aside class="lateral" id="lateral">
+      <div class="marca">
+        <img src="assets/recuenta-simbolo.svg" alt="" width="36" height="36">
+        <span class="marca-nombre">Re<b>Cuenta</b></span>
+      </div>
+      <nav class="nav" id="nav" aria-label="Módulos"></nav>
+      <div class="lateral-pie">
+        <button class="btn-nav" data-accion="restaurar"><svg class="ico"><use href="#i-restaurar"/></svg><span>Restaurar datos de ejemplo</span></button>
+        <button class="btn-nav" data-accion="salir"><svg class="ico"><use href="#i-salir"/></svg><span>Cerrar sesión</span></button>
+      </div>
+    </aside>
+    <div class="velo" id="velo" data-accion="menu"></div>
+
+    <div class="principal">
+      <header class="barra">
+        <button class="btn-icono solo-movil" data-accion="menu" aria-label="Abrir menú"><svg class="ico"><use href="#i-menu"/></svg></button>
+        <div class="contexto" aria-label="Tienda y período activos">
+          <label class="ctx-campo"><span>Tienda</span><select id="f-tienda"></select></label>
+          <label class="ctx-campo"><span>Período</span><select id="f-periodo"></select></label>
+          <span id="ctx-estado" class="chip"></span>
+        </div>
+        <div class="usuario" id="usuario"></div>
+      </header>
+      <main id="vista" class="vista" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- Área de impresión de la liquidación -->
+  <div id="area-impresion" class="area-impresion" aria-hidden="true"></div>
+
+  <!-- Diálogo de confirmación y avisos -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-caja" role="alertdialog" aria-modal="true" aria-labelledby="modal-titulo">
+      <h3 id="modal-titulo"></h3>
+      <p id="modal-texto"></p>
+      <div class="modal-acciones">
+        <button class="btn btn-secundario" id="modal-no">Cancelar</button>
+        <button class="btn btn-primario" id="modal-si">Confirmar</button>
+      </div>
+    </div>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="js/datos-demo.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
