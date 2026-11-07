@@ -7,7 +7,7 @@
 
   var CLAVE = "recuenta.datos.v1";
   var VERSION = 2;                 // si cambia, los visitantes con datos viejos reciben el caso de ejemplo nuevo
-  var REVISION = 3;                // campos agregados al caso de ejemplo dentro de la versión 2
+  var REVISION = 4;                // campos agregados al caso de ejemplo dentro de la versión 2
   var memoria = null;              // respaldo en memoria si el navegador bloquea localStorage
   var persistenciaOk = true;
 
@@ -254,6 +254,79 @@
     var c = estado.cierres[claveCierre(t, per)];
     if (c) { var s = JSON.parse(JSON.stringify(c.snapshot)); s.estado = "Cerrada"; s.fechaCierre = c.fecha; return s; }
     return calcularLiquidacion(t, per);
+  }
+
+  // ---------- ¿Dónde está mi dinero? ----------
+  var TASA_ANUAL = 0.10, DIAS_ALERTA = 15, ROTACION_BAJA = 50;
+  function diasEntre(a, b) {
+    var x = a.split("-").map(Number), y = b.split("-").map(Number);
+    return Math.round((Date.UTC(y[0], y[1] - 1, y[2]) - Date.UTC(x[0], x[1] - 1, x[2])) / 86400000);
+  }
+  // Rotación % = ventas / (inicial + entregas) × 100
+  function rotacion(f) { var base = f.inicial + f.entregas; return base > 0 ? f.ventas / base * 100 : 0; }
+
+  // Indicadores de una tienda en el período: capital, rotación, semáforo y límite sugerido.
+  function indicadoresTienda(t, per) {
+    var filas = filasConciliacion(t, per);
+    var cap = 0, ventasUsd = 0, ini = 0, ent = 0, ven = 0, falt = 0, merma = 0, detalle = [];
+    filas.forEach(function (f) {
+      var p = porId(estado.productos, f.productoId), precio = precioEn(p, per), saldo = Math.max(f.esperado, 0);
+      cap += saldo * precio; ventasUsd += f.ventas * precio;
+      ini += f.inicial; ent += f.entregas; ven += f.ventas; merma += f.devDanadas + f.devVencidas;
+      if (f.diferencia !== null && f.diferencia < 0) falt += -f.diferencia;
+      if (saldo > 0) detalle.push({ productoId: f.productoId, producto: p.nombre, saldo: saldo, precio: precio, capital: r2(saldo * precio) });
+    });
+    var entregadas = ini + ent;
+    var rot = entregadas > 0 ? ven / entregadas * 100 : 0;
+    var exactitud = entregadas > 0 ? Math.max(0, 100 - falt / entregadas * 100 * 5) : 100;
+    var mermaPts = entregadas > 0 ? Math.max(0, 100 - merma / entregadas * 100 * 5) : 100;
+    var puntaje = r2(rot * 0.5 + exactitud * 0.3 + mermaPts * 0.2);
+    var color = puntaje >= 70 ? "verde" : (puntaje >= 40 ? "amarillo" : "rojo");
+    var factor = { verde: 1.5, amarillo: 1, rojo: 0.5 }[color];
+    return {
+      tiendaId: t, capital: r2(cap), costoMensual: r2(cap * TASA_ANUAL / 12), detalle: detalle,
+      entregadas: entregadas, ventas: ven, ventasUsd: r2(ventasUsd), faltantes: falt, merma: merma,
+      rotacion: r2(rot), exactitud: r2(exactitud), mermaPts: r2(mermaPts), puntaje: puntaje, color: color,
+      recomendacion: { verde: "Ampliar consignación", amarillo: "Mantener y vigilar", rojo: "Reducir o pasar a venta directa" }[color],
+      limite: r2(ventasUsd * factor), factor: factor, conMovimiento: filas.length > 0
+    };
+  }
+
+  // Lotes que vencen en 15 días o menos y siguen en la tienda (saldo esperado > 0).
+  function alertasVencimiento(per, hoy) {
+    var res = [];
+    estado.entregas.forEach(function (e) {
+      if (e.periodo !== per) return;
+      e.lineas.forEach(function (l) {
+        if (!l.vencimiento) return;
+        var dias = diasEntre(hoy, l.vencimiento);
+        if (dias > DIAS_ALERTA) return;
+        var f = fila(e.tiendaId, l.productoId, per);
+        if (f.esperado <= 0) return;
+        var rot = rotacion(f), mejor = null;
+        estado.tiendas.forEach(function (t) {
+          if (t.id === e.tiendaId || !t.activa) return;
+          var g = fila(t.id, l.productoId, per), r = rotacion(g);
+          if (g.inicial + g.entregas > 0 && (!mejor || r > mejor.rotacion)) mejor = { tiendaId: t.id, tienda: t.nombre, rotacion: r2(r) };
+        });
+        var p = porId(estado.productos, l.productoId);
+        res.push({
+          entregaId: e.id, tiendaId: e.tiendaId, tienda: nombreT(e.tiendaId), productoId: l.productoId, producto: p.nombre,
+          vencimiento: l.vencimiento, dias: dias, unidades: Math.min(l.cantidad, f.esperado), valor: r2(Math.min(l.cantidad, f.esperado) * precioEn(p, per)),
+          rotacion: r2(rot), rotacionBaja: rot < ROTACION_BAJA,
+          trasladar: rot < ROTACION_BAJA && mejor && mejor.rotacion > rot ? mejor : null
+        });
+      });
+    });
+    return res.sort(function (a, b) { return a.dias - b.dias; });
+  }
+
+  // Sugerido de reposición: por producto, sugerido = máx(0, ventas − saldo).
+  function sugerido(t, per) {
+    return filasConciliacion(t, per).filter(function (f) { var p = porId(estado.productos, f.productoId); return p && p.activo; }).map(function (f) {
+      var saldo = Math.max(f.esperado, 0);
+      return { productoId: f.productoId, producto: nombreP(f.productoId), ventas: f.ventas, rotacion: r2(rotacion(f)), saldo: saldo, sugerido: Math.max(0, f.ventas - saldo) };
+    });
   }
 
   // ---------- Validaciones comunes ----------
@@ -616,6 +689,8 @@
     TIPOS_BITACORA: TIPOS_BITACORA,
     bitacora: function () { return (estado.bitacora || []).slice().sort(function (a, b) { return a.fecha < b.fecha ? 1 : (a.fecha > b.fecha ? -1 : 0); }); },
     registrar: function (tipo, detalle) { if (!TIPOS_BITACORA[tipo]) return; registrar(tipo, detalle); guardar(); },
+
+    indicadoresTienda: indicadoresTienda, alertasVencimiento: alertasVencimiento, sugerido: sugerido, TASA_ANUAL: TASA_ANUAL,
 
     // ---------- Perfiles ----------
     PERFILES: PERFILES,

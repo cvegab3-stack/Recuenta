@@ -9,7 +9,7 @@ window.RC_DATOS_DEMO = function () {
   // Versión 2: agrega usuarios y bitácora. Los visitantes con datos de la versión 1 reciben este caso nuevo.
   return {
     version: 2,
-    revision: 3,          // cambia cuando se agregan campos al caso de ejemplo
+    revision: 4,          // cambia cuando se agregan campos al caso de ejemplo
     seq: 100,
     // Usuarios de la demostración (sin contraseñas: se entra eligiendo el perfil).
     usuarios: [
@@ -25,11 +25,13 @@ window.RC_DATOS_DEMO = function () {
       { id: "B3", fecha: "2026-11-03T10:05:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "entrega", detalle: "Entrega a Comercial San Miguel: Galletas de avena 200 g × 50" },
       { id: "B3G", fecha: "2026-11-03T10:05:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "gps", detalle: "Excepción GPS en Comercial San Miguel (sin señal GPS): «El celular no obtuvo señal GPS dentro del local; entrega hecha en el mostrador.»" },
       { id: "B4", fecha: "2026-11-05T16:10:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "venta", detalle: "Venta reportada en Minimarket Doña Rosa: Galletas de avena 200 g × 70" },
-      { id: "B5", fecha: "2026-11-05T16:45:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "venta", detalle: "Ventas reportadas en Tienda El Ahorro: Jugo de naranja 1 L × 45, Detergente en polvo 500 g × 30" },
-      { id: "B6", fecha: "2026-11-06T09:00:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "venta", detalle: "Venta reportada en Comercial San Miguel: Galletas de avena 200 g × 20" },
+      { id: "B5", fecha: "2026-11-05T16:45:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "venta", detalle: "Ventas reportadas en Tienda El Ahorro: Jugo de naranja 1 L × 25, Detergente en polvo 500 g × 20" },
+      { id: "B6", fecha: "2026-11-06T09:00:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "venta", detalle: "Venta reportada en Comercial San Miguel: Galletas de avena 200 g × 8" },
       { id: "B7", fecha: "2026-11-06T11:30:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "devolucion", detalle: "Devolución en Minimarket Doña Rosa: Galletas de avena 200 g × 25 (20 aptas, 3 dañadas, 2 vencidas)" },
-      { id: "B8", fecha: "2026-11-06T12:05:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "devolucion", detalle: "Devolución en Tienda El Ahorro: Jugo de naranja 1 L × 5 (apta)" },
-      { id: "B9", fecha: "2026-11-06T12:20:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "conteo", detalle: "Conteo físico en Tienda El Ahorro: Jugo de naranja 1 L = 10, Detergente en polvo 500 g = 8" }
+      { id: "B8", fecha: "2026-11-06T12:05:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "devolucion", detalle: "Devolución en Tienda El Ahorro: Jugo de naranja 1 L × 9 (5 aptas, 4 dañadas)" },
+      { id: "B8b", fecha: "2026-11-06T12:40:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "devolucion", detalle: "Devolución en Comercial San Miguel: Galletas de avena 200 g × 6 (vencida)" },
+      { id: "B9", fecha: "2026-11-06T12:20:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "conteo", detalle: "Conteo físico en Tienda El Ahorro: Jugo de naranja 1 L = 24, Detergente en polvo 500 g = 18" },
+      { id: "B9b", fecha: "2026-11-06T13:10:00", usuarioId: "U2", usuario: "Jorge Cedeño", tipo: "conteo", detalle: "Conteo físico en Comercial San Miguel: Galletas de avena 200 g = 32" }
     ],
     periodos: [
       { id: "2026-10", nombre: "Octubre 2026" },
@@ -66,20 +68,23 @@ window.RC_DATOS_DEMO = function () {
     ],
     ventas: [
       { id: "V1", fecha: "2026-11-05", periodo: "2026-11", tiendaId: "T1", productoId: "P1", cantidad: 70 },
-      { id: "V2", fecha: "2026-11-05", periodo: "2026-11", tiendaId: "T2", productoId: "P2", cantidad: 45 },
-      { id: "V3", fecha: "2026-11-05", periodo: "2026-11", tiendaId: "T2", productoId: "P3", cantidad: 30 },
-      { id: "V4", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T3", productoId: "P1", cantidad: 20 }
+      { id: "V2", fecha: "2026-11-05", periodo: "2026-11", tiendaId: "T2", productoId: "P2", cantidad: 25 },
+      { id: "V3", fecha: "2026-11-05", periodo: "2026-11", tiendaId: "T2", productoId: "P3", cantidad: 20 },
+      { id: "V4", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T3", productoId: "P1", cantidad: 8 }
     ],
     devoluciones: [
       { id: "D1", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T1", productoId: "P1", cantidad: 20, condicion: "apta" },
       { id: "D2", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T1", productoId: "P1", cantidad: 3, condicion: "danada" },
       { id: "D3", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T1", productoId: "P1", cantidad: 2, condicion: "vencida" },
-      { id: "D4", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T2", productoId: "P2", cantidad: 5, condicion: "apta" }
+      { id: "D4", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T2", productoId: "P2", cantidad: 5, condicion: "apta" },
+      { id: "D5", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T2", productoId: "P2", cantidad: 4, condicion: "danada" },
+      { id: "D6", fecha: "2026-11-06", periodo: "2026-11", tiendaId: "T3", productoId: "P1", cantidad: 6, condicion: "vencida" }
     ],
     // Conteos físicos por tienda|producto|período. El de Doña Rosa queda pendiente a propósito.
     conteos: {
-      "T2|P2|2026-11": { cantidad: 10, fecha: "2026-11-06", observacion: "", revisada: false },
-      "T2|P3|2026-11": { cantidad: 8, fecha: "2026-11-06", observacion: "", revisada: false }
+      "T2|P2|2026-11": { cantidad: 24, fecha: "2026-11-06", observacion: "", revisada: false },
+      "T2|P3|2026-11": { cantidad: 18, fecha: "2026-11-06", observacion: "", revisada: false },
+      "T3|P1|2026-11": { cantidad: 32, fecha: "2026-11-06", observacion: "", revisada: false }
     },
     cierres: {}
   };

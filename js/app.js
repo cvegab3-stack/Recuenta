@@ -14,6 +14,7 @@
     { id: "devoluciones", nombre: "Devoluciones", icono: "i-devoluciones", perfiles: ["admin", "repartidor", "tienda"] },
     { id: "conciliacion", nombre: "Conciliación", icono: "i-conciliacion", perfiles: ["admin", "repartidor", "contador", "tienda"] },
     { id: "liquidacion", nombre: "Liquidación", icono: "i-liquidacion", perfiles: ["admin", "contador", "tienda"] },
+    { id: "dinero", nombre: "¿Dónde está mi dinero?", icono: "i-dinero", perfiles: ["admin", "contador"] },
     { id: "impacto", nombre: "Impacto económico", icono: "i-impacto", perfiles: ["admin", "contador"] },
     { id: "usuarios", nombre: "Usuarios", icono: "i-usuarios", perfiles: ["admin"] },
     { id: "bitacora", nombre: "Bitácora", icono: "i-bitacora", perfiles: ["admin", "contador"] }
@@ -369,7 +370,7 @@
       }).join("") + "</tbody></table></div>" : vacio("i-catalogo", "Aún no hay tiendas activas", "Agrega una tienda para empezar a registrar entregas.", usuario.perfil === "admin" ? '<a class="btn btn-primario" href="#/catalogo">' + ico("i-mas") + "Agregar tienda</a>" : "");
 
     return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : (esRep ? " · tiendas de tu ruta" : " · todas las tiendas")) + ".") +
-      bandejaExcepciones() + tarjetas + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
+      bandejaExcepciones() + tarjetas + tarjetaDinero() + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
   };
   // Bandeja del administrador: entregas sin GPS o fuera de rango que esperan aprobación u observación.
   function bandejaExcepciones() {
@@ -738,9 +739,12 @@
       } else if (gpsError) { out.className = "gps-estado gps-fuera"; out.textContent = gpsError + " Puedes registrar la entrega con justificación."; }
       $("#grupo-just", v).hidden = enRango() || (!ubic && !gpsError);
     }
+    function pintarSugerido() { var c = $("#sugerido", v); if (c) c.innerHTML = form.tiendaId.value ? htmlSugerido(form.tiendaId.value) : ""; }
     if (nueva) {
       firma = prepararFirma($(".firma-caja", v));
       form.tiendaId.addEventListener("change", pintarGps);
+      form.tiendaId.addEventListener("change", pintarSugerido);
+      pintarSugerido();
     }
     if (form) validador(form, function () {
       var reglas = [reglaFecha(form), [form.tiendaId, function (el) { return RCV.seleccion(el.value, "la tienda"); }]];
@@ -777,6 +781,12 @@
           function (msg) { ubic = null; gpsError = msg; b.disabled = false; pintarGps(); });
       }
       if (a === "borrar-firma" && firma) firma.borrar();
+      if (a === "usar-sugerencia") {
+        var sug = RC.sugerido(form.tiendaId.value, filtro.periodo).filter(function (x) { return x.sugerido > 0; });
+        var cont = $(".lineas", v);
+        cont.innerHTML = sug.map(function (x, i) { return lineaHtml({ productoId: x.productoId, cantidad: x.sugerido }, i); }).join("");
+        toast("Se cargaron " + sug.length + " producto(s) con la cantidad sugerida. Puedes ajustarlas.");
+      }
       if (a === "agregar-linea") {
         var cont = $(".lineas", v);
         var div = document.createElement("div");
@@ -1124,6 +1134,67 @@
       }
     });
   };
+
+  // ================= ¿DÓNDE ESTÁ MI DINERO? (administrador y contador) =================
+  function resumenDinero(per) {
+    var ind = tiendasVisibles().filter(function (t) { return t.activa; }).map(function (t) { var i = RC.indicadoresTienda(t.id, per); i.tienda = t.nombre; return i; });
+    var capital = RC.r2(ind.reduce(function (a, i) { return a + i.capital; }, 0));
+    var alertas = RC.alertasVencimiento(per, RCV.hoy()).filter(function (a) { return RC.puedeVerTienda(a.tiendaId); });
+    return { ind: ind, capital: capital, costo: RC.r2(capital * RC.TASA_ANUAL / 12), alertas: alertas };
+  }
+  function fraseDinero(r) {
+    return "Tienes <b>" + usd(r.capital) + "</b> en mercadería en consignación. A la tasa del proyecto (10 % anual), te cuesta <b>" + usd(r.costo) + "</b> por mes.";
+  }
+  var COLORES = { verde: "Verde", amarillo: "Amarillo", rojo: "Rojo" };
+  VISTAS.dinero = function () {
+    var per = filtro.periodo, r = resumenDinero(per);
+    var rojos = r.ind.filter(function (i) { return i.color === "rojo"; }).length;
+    var k = '<p class="frase-dinero">' + fraseDinero(r) + "</p>" + '<div class="kpis">' +
+      kpiFijo("Capital inmovilizado", usd(r.capital), "Saldo esperado × precio del período", "i-dinero", "kpi-dinero") +
+      kpiFijo("Costo de oportunidad", usd(r.costo) + "/mes", "Capital × 10 % ÷ 12", "i-impacto") +
+      kpiFijo("Lotes por vencer", r.alertas.length, "En 15 días o menos", "i-alerta", r.alertas.length ? "kpi-alerta" : "") +
+      kpiFijo("Tiendas en rojo", rojos, "Reducir o pasar a venta directa", "i-catalogo", rojos ? "kpi-alerta" : "") + "</div>";
+
+    var alertas = '<section class="tarjeta"><h2 class="tarjeta-titulo">Alertas de vencimiento</h2>' + (r.alertas.length ? '<ul class="alertas">' + r.alertas.map(function (a) {
+      return '<li class="alerta-venc"><div><strong>' + esc(a.producto) + "</strong> en " + esc(a.tienda) + '<small class="sub">' + num(a.unidades) + " u. (" + usd(a.valor) + ") · vence el " + fecha(a.vencimiento) + " · rotación " + num(a.rotacion) + " %</small></div>" +
+        '<span class="estado ' + (a.dias <= 7 ? "estado-alerta" : "estado-pendiente") + '">' + (a.dias < 0 ? "Vencido hace " + (-a.dias) + " días" : a.dias === 0 ? "Vence hoy" : "En " + a.dias + " días") + "</span>" +
+        '<p class="sugerencia">' + (a.trasladar ? "Rotación baja: sugerimos <b>trasladar a " + esc(a.trasladar.tienda) + "</b>, que rota este producto al " + num(a.trasladar.rotacion) + " %." :
+          a.rotacionBaja ? "Rotación baja y ninguna otra tienda lo rota mejor: promociónalo o retíralo a tiempo." : "Rota bien: vigila que se venda antes del vencimiento.") + "</p></li>";
+    }).join("") + "</ul>" : '<p class="ayuda">No hay lotes que venzan en los próximos 15 días.</p>') + "</section>";
+
+    var semaforo = '<section class="tarjeta"><h2 class="tarjeta-titulo">Semáforo de tiendas · ' + esc(periodo(per).nombre) + '</h2><div class="semaforo">' + r.ind.map(function (i) {
+      return '<article class="sem sem-' + i.color + '"><div class="sem-cab"><span class="sem-luz" aria-hidden="true"></span><div><strong>' + esc(i.tienda) + '</strong><small class="sub">' + COLORES[i.color] + " · " + i.recomendacion + '</small></div><b class="sem-puntaje">' + num(Math.round(i.puntaje)) + "</b></div>" +
+        '<dl class="sem-datos"><dt>Rotación</dt><dd>' + num(i.rotacion) + " %</dd><dt>Exactitud</dt><dd>" + num(i.exactitud) + "</dd><dt>Merma</dt><dd>" + num(i.mermaPts) + "</dd><dt>Límite sugerido</dt><dd>" + usd(i.limite) + " <small>(" + String(i.factor).replace(".", ",") + " × ventas de " + usd(i.ventasUsd) + ")</small></dd></dl></article>";
+    }).join("") + "</div>" +
+      '<p class="formula">Puntaje = 50 % rotación + 30 % exactitud + 20 % merma. Rotación = ventas ÷ (inicial + entregas) × 100. Exactitud = 100 − (faltantes ÷ entregadas × 100 × 5). Merma = 100 − (dañadas o vencidas ÷ entregadas × 100 × 5). ' +
+      "Verde ≥ 70: ampliar consignación (límite 1,5 × ventas). Amarillo 40–69: mantener y vigilar (1 ×). Rojo &lt; 40: reducir o pasar a venta directa (0,5 ×).</p></section>";
+
+    var filas = [];
+    r.ind.forEach(function (i) { i.detalle.forEach(function (d) { filas.push("<tr><td>" + esc(i.tienda) + "</td><td>" + esc(d.producto) + "</td><td class='num'>" + num(d.saldo) + "</td><td class='num'>" + usd(d.precio) + "</td><td class='num'>" + usd(d.capital) + "</td></tr>"); }); });
+    var capital = '<section class="tarjeta"><h2 class="tarjeta-titulo">Capital inmovilizado por tienda y producto</h2>' + (filas.length ? '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Tienda</th><th>Producto</th><th class="num">Saldo esperado</th><th class="num">Precio</th><th class="num">Capital</th></tr></thead><tbody>' + filas.join("") +
+      "</tbody><tfoot>" + r.ind.map(function (i) { return "<tr><td colspan='4'>" + esc(i.tienda) + " · costo de oportunidad " + usd(i.costoMensual) + "/mes</td><td class='num'>" + usd(i.capital) + "</td></tr>"; }).join("") +
+      "<tr class='total'><td colspan='4'>Total en consignación</td><td class='num' id='capital-total'>" + usd(r.capital) + "</td></tr></tfoot></table></div>" : '<p class="ayuda">No hay mercadería en consignación en este período.</p>') + "</section>";
+
+    return encabezado("¿Dónde está mi dinero?", "Cuánto capital tienes en las tiendas, cuánto te cuesta y qué hacer con cada tienda.") + k + alertas + semaforo + capital;
+  };
+  function tarjetaDinero() {
+    if (!moduloPermitido("dinero")) return "";
+    var r = resumenDinero(filtro.periodo);
+    return '<section class="tarjeta tarjeta-dinero"><h2 class="tarjeta-titulo">¿Dónde está mi dinero?</h2><p class="frase-dinero">' + fraseDinero(r) + "</p>" +
+      '<p class="ayuda">' + r.alertas.length + " lote(s) por vencer · " + r.ind.map(function (i) { return '<span class="punto punto-' + i.color + '"></span>' + esc(i.tienda); }).join(" · ") + "</p>" +
+      '<a class="btn btn-secundario" href="#/dinero">Ver detalle ' + ico("i-flecha") + "</a></section>";
+  }
+
+  // Sugerido de reposición en Entregas.
+  function htmlSugerido(t) {
+    var s = RC.sugerido(t, filtro.periodo);
+    if (!s.length) return '<p class="ayuda sugerido">Sin historial de ventas de esta tienda en el período: no hay sugerido de reposición.</p>';
+    var hay = s.some(function (x) { return x.sugerido > 0; });
+    return '<div class="sugerido"><div class="sugerido-cab"><strong>Sugerido de reposición</strong>' + (hay ? '<button type="button" class="btn btn-mini btn-primario" data-accion="usar-sugerencia">Usar sugerencia</button>' : "") + "</div>" +
+      '<div class="tabla-envoltura"><table class="tabla tabla-mini"><thead><tr><th>Producto</th><th class="num">Vendidas</th><th class="num">Rotación</th><th class="num">Saldo</th><th class="num">Sugerido</th></tr></thead><tbody>' +
+      s.map(function (x) { return "<tr><td>" + esc(x.producto) + "</td><td class='num'>" + num(x.ventas) + "</td><td class='num'>" + num(x.rotacion) + " %</td><td class='num'>" + num(x.saldo) + "</td><td class='num'><b>" + num(x.sugerido) + "</b></td></tr>"; }).join("") +
+      '</tbody></table></div><small class="ayuda">Sugerido = máx(0, vendidas − saldo). Rotación = vendidas ÷ (inicial + entregas).</small></div>';
+  }
 
   // ================= IMPACTO ECONÓMICO (administrador y contador) =================
   var simHoras = 6, simAnios = 3;

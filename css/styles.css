@@ -384,3 +384,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
 .sim-no .sim-decision b { color: var(--rojo); }
 .tabla-memb .fila-editando td { font-weight: 700; }
 @media (max-width: 640px) { .sim-res { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- ¿Dónde está mi dinero? ---------- */
+.frase-dinero { font-size: 1.05rem; margin: 0 0 16px; color: var(--verde-900); }
+.tarjeta-dinero .frase-dinero { margin-bottom: 8px; }
+.tarjeta-dinero .btn { margin-top: 10px; }
+.alertas { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.alerta-venc { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 12px; border: 1px solid #EDD58C; background: #FFFCF0; border-radius: 10px; }
+.alerta-venc .sugerencia { grid-column: 1 / -1; margin: 0; font-size: .9rem; }
+.semaforo { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.sem { border: 1px solid var(--borde); border-radius: 12px; padding: 14px; border-top-width: 5px; }
+.sem-verde { border-top-color: #2E8B57; }
+.sem-amarillo { border-top-color: #E0A526; }
+.sem-rojo { border-top-color: var(--rojo); }
+.sem-cab { display: flex; align-items: center; gap: 10px; }
+.sem-cab > div { flex: 1; }
+.sem-luz { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+.sem-verde .sem-luz, .punto-verde { background: #2E8B57; }
+.sem-amarillo .sem-luz, .punto-amarillo { background: #E0A526; }
+.sem-rojo .sem-luz, .punto-rojo { background: var(--rojo); }
+.sem-puntaje { font-size: 1.6rem; color: var(--verde-900); }
+.sem-datos { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; font-size: .88rem; }
+.sem-datos dt { color: var(--texto-suave); }
+.sem-datos dd { margin: 0; text-align: right; }
+.punto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.formula { font-size: .82rem; color: var(--texto-suave); margin: 12px 0 0; background: var(--verde-50); padding: 10px 12px; border-radius: 8px; }
+.sugerido { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--verde-200); border-radius: 10px; background: #FBFDFC; }
+.sugerido-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
