@@ -7,6 +7,7 @@
 
   var CLAVE = "recuenta.datos.v1";
   var VERSION = 2;                 // si cambia, los visitantes con datos viejos reciben el caso de ejemplo nuevo
+  var REVISION = 3;                // campos agregados al caso de ejemplo dentro de la versión 2
   var memoria = null;              // respaldo en memoria si el navegador bloquea localStorage
   var persistenciaOk = true;
 
@@ -43,7 +44,7 @@
     if (crudo) {
       try { estado = JSON.parse(crudo); } catch (e) { estado = null; }
     }
-    if (!estado || estado.version !== VERSION) {
+    if (!estado || estado.version !== VERSION || estado.revision !== REVISION) {
       estado = window.RC_DATOS_DEMO();
       primeraVisita = true;
       guardar();
@@ -58,10 +59,10 @@
     admin: "Administrador", repartidor: "Repartidor", contador: "Contador", tienda: "Tienda"
   };
   var PERMISOS = {
-    admin: { catalogoVer: true, catalogoEditar: true, movimientos: true, conteo: true, revisar: true, cerrar: true, usuarios: true, bitacora: true, todasLasTiendas: true },
+    admin: { catalogoVer: true, catalogoEditar: true, movimientos: true, conteo: true, revisar: true, cerrar: true, usuarios: true, bitacora: true, todasLasTiendas: true, excepciones: true },
     repartidor: { movimientos: true, conteo: true },
     contador: { catalogoVer: true, revisar: true, cerrar: true, bitacora: true, todasLasTiendas: true },
-    tienda: {}
+    tienda: { confirmar: true }
   };
   var TIPOS_BITACORA = {
     acceso: "Acceso", entrega: "Entrega", venta: "Venta", devolucion: "Devolución", conteo: "Conteo",
@@ -109,6 +110,16 @@
   function nombreT(id) { var t = porId(estado.tiendas, id); return t ? t.nombre : id; }
   function nombreP(id) { var p = porId(estado.productos, id); return p ? p.nombre : id; }
   var CONDICION_TXT = { apta: "apta", danada: "dañada", vencida: "vencida" };
+
+  // Distancia en metros entre dos puntos (fórmula de haversine).
+  var RANGO_ENTREGA = 150;
+  function distancia(a, b) {
+    if (!a || !b || !isFinite(a.lat) || !isFinite(b.lat)) return null;
+    var R = 6371000, rad = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+  }
 
   // ---------- Utilidades ----------
   function r2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
@@ -283,8 +294,10 @@
         if (vistos[l.productoId]) error("El producto está repetido en la entrega. Suma las cantidades en una sola línea.", "linea-" + i);
         vistos[l.productoId] = true;
         validarCantidad(l.cantidad, "cantidad-" + i);
+        chk(V.vencimiento(l.vencimiento, r.fecha), "vencimiento-" + i);
       });
       chk(V.nota(r.nota), "nota");
+      var lineasOk = r.lineas.map(function (l) { return { productoId: l.productoId, cantidad: l.cantidad, vencimiento: String(l.vencimiento || "") }; });
       r.nota = String(r.nota || "").trim();
       if (r.id) {
         var previo = porId(estado.entregas, r.id);
@@ -305,16 +318,30 @@
           }
         });
         previo.fecha = r.fecha; previo.periodo = r.periodo; previo.tiendaId = r.tiendaId;
-        previo.lineas = r.lineas.map(function (l) { return { productoId: l.productoId, cantidad: l.cantidad }; });
+        previo.lineas = lineasOk;
         previo.nota = r.nota || "";
         registrar("entrega", "Corrección de entrega " + previo.id + " a " + nombreT(previo.tiendaId) + ": " + resumenLineas(previo.lineas));
         guardar();
         return previo;
       }
-      var nueva = { id: nuevoId("E"), fecha: r.fecha, periodo: r.periodo, tiendaId: r.tiendaId,
-        lineas: r.lineas.map(function (l) { return { productoId: l.productoId, cantidad: l.cantidad }; }), nota: r.nota || "" };
+      // Recepción en la tienda: quién recibe, firma y ubicación. Fuera de rango o sin GPS exige justificación.
+      chk(V.nombrePersona(r.recibidoPor, { etiqueta: "el nombre de quien recibe" }), "recibidoPor");
+      if (!r.firma || !/^data:image\/png;base64,/.test(r.firma)) error("Pide a quien recibe que firme en el recuadro.", "firma");
+      var tiendaE = porId(estado.tiendas, r.tiendaId);
+      var gps = null;
+      if (r.gps && isFinite(r.gps.lat) && isFinite(r.gps.lng)) {
+        gps = { lat: Number(r.gps.lat), lng: Number(r.gps.lng), precision: Math.round(Number(r.gps.precision) || 0), distancia: distancia(r.gps, tiendaE) };
+      }
+      var enRango = !!(gps && gps.distancia !== null && gps.distancia <= RANGO_ENTREGA);
+      if (!enRango) chk(V.justificacion(r.justificacion), "justificacion");
+      var u = actor();
+      var nueva = { id: nuevoId("E"), fecha: r.fecha, periodo: r.periodo, tiendaId: r.tiendaId, lineas: lineasOk, nota: r.nota || "",
+        recibidoPor: String(r.recibidoPor).trim().replace(/\s+/g, " "), firma: r.firma, registradoEn: ahoraLocal(), registradoPor: { id: u.id, nombre: u.nombre },
+        gps: gps, enRango: enRango, justificacion: enRango ? "" : String(r.justificacion).trim(),
+        excepcion: enRango ? null : { estado: "pendiente", nota: "", revisadoPor: "", revisadoEn: "" }, confirmada: null };
       estado.entregas.push(nueva);
-      registrar("entrega", "Entrega a " + nombreT(nueva.tiendaId) + ": " + resumenLineas(nueva.lineas));
+      registrar("entrega", "Entrega a " + nombreT(nueva.tiendaId) + ": " + resumenLineas(nueva.lineas) + ". Recibió " + nueva.recibidoPor + (gps ? " a " + gps.distancia + " m" : ""));
+      if (!enRango) registrar("gps", "Excepción GPS en " + nombreT(nueva.tiendaId) + " (" + (gps ? "a " + gps.distancia + " m de la tienda" : "sin señal GPS") + "): «" + nueva.justificacion + "»");
       guardar();
       return nueva;
     },
@@ -422,6 +449,38 @@
         " en " + nombreT(t) + ", " + nombreP(p) + (texto ? ": «" + texto + "»" : ""));
       guardar();
       return fila(t, p, per);
+    },
+
+    // Bandeja de excepciones GPS (administrador): aprobar u observar con nota.
+    revisarExcepcion: function (id, accion, nota) {
+      exigir("excepciones");
+      var e = porId(estado.entregas, id);
+      if (!e || !e.excepcion) error("Esa entrega no tiene una excepción GPS.");
+      nota = String(nota || "").trim();
+      if (accion === "observar") chk(V.observacion(nota), "nota");
+      else chk(V.texto(nota, 5, 200, "la nota", true), "nota");
+      var u = actor();
+      e.excepcion = { estado: accion === "observar" ? "observada" : "aprobada", nota: nota, revisadoPor: u.nombre, revisadoEn: ahoraLocal() };
+      registrar("gps", "Excepción GPS " + (accion === "observar" ? "observada" : "aprobada") + " (entrega " + e.id + ", " + nombreT(e.tiendaId) + ")" + (nota ? ": «" + nota + "»" : ""));
+      guardar();
+      return e;
+    },
+    excepcionesPendientes: function () {
+      return estado.entregas.filter(function (e) { return e.excepcion && e.excepcion.estado === "pendiente"; });
+    },
+
+    // La tienda confirma que recibió la entrega.
+    confirmarRecepcion: function (id) {
+      exigir("confirmar");
+      var e = porId(estado.entregas, id);
+      if (!e) error("La entrega ya no existe.");
+      exigirTienda(e.tiendaId);
+      if (e.confirmada) error("Esta entrega ya fue confirmada.");
+      var u = actor();
+      e.confirmada = { por: u.nombre, en: ahoraLocal() };
+      registrar("entrega", "Recepción confirmada por la tienda " + nombreT(e.tiendaId) + " (entrega " + e.id + " del " + e.fecha + ")");
+      guardar();
+      return e;
     },
 
     cerrarLiquidacion: function (t, per) {
@@ -560,6 +619,8 @@
 
     // ---------- Perfiles ----------
     PERFILES: PERFILES,
+    distancia: distancia,
+    RANGO_ENTREGA: RANGO_ENTREGA,
     actor: actor,
     puede: function (accion) { return puede(accion); },
     tiendasPermitidas: function () { return tiendasPermitidas(); },

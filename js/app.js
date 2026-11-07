@@ -368,8 +368,23 @@
       }).join("") + "</tbody></table></div>" : vacio("i-catalogo", "Aún no hay tiendas activas", "Agrega una tienda para empezar a registrar entregas.", usuario.perfil === "admin" ? '<a class="btn btn-primario" href="#/catalogo">' + ico("i-mas") + "Agregar tienda</a>" : "");
 
     return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), "Resumen de " + esc(periodo(per).nombre) + (filtro.tienda ? " · " + esc(tienda(filtro.tienda).nombre) : (esRep ? " · tiendas de tu ruta" : " · todas las tiendas")) + ".") +
-      tarjetas + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
+      bandejaExcepciones() + tarjetas + flujo + '<section class="tarjeta"><h2 class="tarjeta-titulo">Estado por tienda</h2>' + tabla + "</section>";
   };
+  // Bandeja del administrador: entregas sin GPS o fuera de rango que esperan aprobación u observación.
+  function bandejaExcepciones() {
+    if (!puede("excepciones")) return "";
+    var lista = RC.excepcionesPendientes();
+    if (!lista.length) return "";
+    return '<section class="tarjeta tarjeta-alerta" id="bandeja-excepciones"><h2 class="tarjeta-titulo">' + ico("i-alerta") + " Excepciones por revisar (" + lista.length + ")</h2>" +
+      lista.map(function (e) {
+        return '<form class="excepcion form-excepcion" data-id="' + e.id + '" novalidate><div class="excepcion-cab"><span><strong>' + esc(tienda(e.tiendaId).nombre) + "</strong> · " + fecha(e.fecha) + " · " +
+          (e.gps ? "a " + distanciaTxt(e.gps.distancia) + " de la tienda" : "sin señal GPS") + " · " + esc(e.registradoPor ? e.registradoPor.nombre : "") + "</span>" +
+          '<button type="button" class="btn btn-mini" data-accion="comprobante" data-id="' + e.id + '">Comprobante</button></div>' +
+          '<p class="excepcion-just">«' + esc(e.justificacion) + "»</p>" +
+          '<label class="campo"><span>Nota de revisión (obligatoria para observar)</span><textarea name="nota" rows="1" maxlength="200" placeholder="Ej.: Confirmado por llamada con la tienda."></textarea></label>' +
+          '<div class="form-acciones"><button class="btn btn-secundario" type="submit" data-modo="observar">Observar</button><button class="btn btn-primario" type="submit" data-modo="aprobar">' + ico("i-ok") + "Aprobar</button></div></form>";
+      }).join("") + "</section>";
+  }
   function kpi(t, v, s, destino, icono, cls, estado) {
     var permitido = moduloPermitido(destino);
     return '<button class="kpi ' + (cls || "") + '" ' + (permitido ? 'data-accion="ir" data-destino="' + destino + '" data-estado="' + (estado || "") + '"' : "disabled") + '>' +
@@ -400,10 +415,11 @@
       paso("3", "Devolviste", num(tot.d) + " u.", "devoluciones") + paso("4", "Conciliación", difs + " por revisar", "conciliacion") +
       paso("5", "A pagar", usd(liq.total), "liquidacion") + "</div></section>";
     var lista = '<section class="tarjeta"><h2 class="tarjeta-titulo">Entregas recibidas</h2>' + (entregas.length ?
-      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Productos</th><th class="num">Unidades</th></tr></thead><tbody>' +
+      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Productos</th><th class="num">Unidades</th><th>Recepción</th><th></th></tr></thead><tbody>' +
       entregas.map(function (e) {
         return "<tr><td>" + fecha(e.fecha) + "</td><td>" + e.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " <b>× " + num(l.cantidad) + "</b>"; }).join("<br>") +
-          "</td><td class='num'>" + num(e.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0)) + "</td></tr>";
+          "</td><td class='num'>" + num(e.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0)) + "</td><td>" + insigniasRecepcion(e) +
+          '</td><td class="acciones"><button class="btn btn-mini' + (e.confirmada ? "" : " btn-primario") + '" data-accion="comprobante" data-id="' + e.id + '">' + (e.confirmada ? "Comprobante" : "Revisar y confirmar") + "</button></td></tr>";
       }).join("") + "</tbody></table></div>" : vacio("i-entregas", "Sin entregas en este período", "Cuando la distribuidora te entregue mercadería, aparecerá aquí.")) + "</section>";
     return encabezado("Hola, " + esc(usuario.nombre.split(" ")[0]), esc(t.nombre) + " · " + esc(periodo(per).nombre) + ". La cuenta que los dos ven igual: estos son los mismos números que ve la distribuidora.") +
       tarjetas + flujo + lista;
@@ -413,6 +429,20 @@
     return '<span class="estado ' + cls + '">' + e + "</span>";
   }
   ENLACES.inicio = function (v) {
+    $$(".form-excepcion", v).forEach(function (fx) {
+      var modo = "aprobar";
+      $$('[type="submit"]', fx).forEach(function (b) { b.addEventListener("click", function () { modo = b.dataset.modo; }); });
+      validador(fx, function () { return [[fx.nota, function (el) { return modo === "observar" ? RCV.observacion(el.value) : RCV.texto(el.value, 5, 200, "la nota", true); }]]; });
+      fx.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!fx.validarTodo()) return;
+        enviarUnaVez(fx, function () {
+          RC.revisarExcepcion(fx.dataset.id, modo, fx.nota.value);
+          toast(modo === "observar" ? "Excepción observada. Queda en la bitácora." : "Excepción aprobada. Queda en la bitácora.");
+          render();
+        });
+      });
+    });
     v.addEventListener("click", function (e) {
       var b = e.target.closest("[data-accion]");
       if (!b) return;
@@ -563,67 +593,189 @@
     var r = rangoPeriodo(per);
     var bloqueado = tSel && RC.cerrado(tSel, per);
     var lista = d.entregas.filter(function (e) { return e.periodo === per && enFiltro(e.tiendaId); })
-      .sort(function (a, b) { return a.fecha < b.fecha ? 1 : -1; });
+      .sort(function (a, b) { return (a.fecha + (a.registradoEn || "")) < (b.fecha + (b.registradoEn || "")) ? 1 : -1; });
+
+    // Recepción en la tienda (solo en entregas nuevas): GPS, quién recibe, firma y justificación si hace falta.
+    var recepcion = ed ? '<p class="ayuda">La corrección mantiene la firma, la ubicación y la persona que recibió la entrega original.</p>' :
+      '<fieldset class="recepcion"><legend>Recepción en la tienda</legend>' +
+      '<div class="gps-fila"><button type="button" class="btn btn-secundario" data-accion="capturar-gps">' + ico("i-ubicacion") + 'Capturar mi ubicación</button>' +
+      '<p class="gps-estado" id="gps-estado">Captura tu ubicación al llegar. Debe estar a ' + RC.RANGO_ENTREGA + ' m o menos de la tienda.</p></div>' +
+      campo("Recibido por *", '<input name="recibidoPor" maxlength="60" autocomplete="off" placeholder="Nombre de quien recibe en la tienda">', "ancho") +
+      '<div class="campo ancho"><span>Firma de quien recibe *</span><div class="firma-caja" data-campo="firma"><canvas class="firma-lienzo" aria-label="Recuadro para firmar con el dedo"></canvas>' +
+      '<span class="firma-guia">Firme aquí con el dedo</span></div><button type="button" class="btn btn-mini firma-borrar" data-accion="borrar-firma">' + ico("i-borrar") + "Borrar firma</button></div>" +
+      '<div class="campo ancho" id="grupo-just" hidden><span>Justificación de la excepción GPS *</span><textarea name="justificacion" rows="2" maxlength="200" placeholder="Ej.: No hay señal GPS dentro del local; entrega en el mostrador."></textarea>' +
+      '<small class="ayuda">Sin ubicación o a más de ' + RC.RANGO_ENTREGA + ' m, la entrega queda como «Excepción GPS» para que el administrador la revise.</small></div></fieldset>';
 
     var form = puede("movimientos") ? '<form class="tarjeta form" id="form-entrega" novalidate><h2 class="tarjeta-titulo">' + (ed ? "Corregir entrega" : "Registrar entrega") + "</h2>" +
       '<div class="rejilla-2">' +
       campo("Fecha *", '<input name="fecha" type="date" required min="' + r.min + '" max="' + r.max + '" value="' + (ed ? ed.fecha : fechaPorDefecto(per)) + '">') +
       campo("Período", '<input value="' + esc(periodo(per).nombre) + '" disabled>') +
       campo("Tienda *", '<select name="tiendaId" required>' + opcionesTiendas(tSel, true) + "</select>", "ancho") +
-      '</div><div class="lineas" data-campo="lineas"><div class="lineas-cab"><span>Producto *</span><span>Cantidad *</span><span></span></div>' +
+      '</div><div id="sugerido"></div><div class="lineas" data-campo="lineas">' +
       lineas.map(function (l, i) { return lineaHtml(l, i); }).join("") + "</div>" +
       '<button type="button" class="btn btn-secundario btn-mini" data-accion="agregar-linea">' + ico("i-mas") + "Agregar producto</button>" +
       campo("Nota o número de guía (opcional)", '<input name="nota" maxlength="80" value="' + esc(ed ? ed.nota : "") + '" placeholder="Ej.: Guía 0015 - ruta centro">', "ancho") +
+      recepcion +
       '<p class="error-form" role="alert"></p><div class="form-acciones">' +
       (ed ? '<button type="button" class="btn btn-secundario" data-accion="cancelar">Cancelar corrección</button>' : "") +
       '<button class="btn btn-primario" type="submit"' + (bloqueado ? " disabled" : "") + ">" + ico("i-ok") + (ed ? "Guardar corrección" : "Guardar entrega") + "</button></div></form>" : "";
 
     var tabla = '<div class="tarjeta"><h2 class="tarjeta-titulo">Historial de entregas · ' + esc(periodo(per).nombre) + "</h2>" + (lista.length ?
-      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Tienda</th><th>Productos</th><th class="num">Unidades</th><th>Nota</th><th></th></tr></thead><tbody>' +
+      '<div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Tienda</th><th>Productos</th><th class="num">Unidades</th><th>Recepción</th><th></th></tr></thead><tbody>' +
       lista.map(function (e) {
         var u = e.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0);
         var cerr = RC.cerrado(e.tiendaId, e.periodo);
-        return "<tr" + (edicion.entregas === e.id ? ' class="fila-editando"' : "") + "><td>" + fecha(e.fecha) + "</td><td>" + esc(tienda(e.tiendaId).nombre) + "</td><td>" +
-          e.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " <b>× " + num(l.cantidad) + "</b>"; }).join("<br>") + "</td><td class='num'>" + num(u) + "</td><td>" + esc(e.nota || "—") + "</td>" +
-          '<td class="acciones">' + (cerr ? '<span class="estado estado-gris">' + ico("i-candado") + "Cerrada</span>" : puede("movimientos") ?
+        return "<tr" + (edicion.entregas === e.id ? ' class="fila-editando"' : "") + "><td>" + fecha(e.fecha) + "</td><td>" + esc(tienda(e.tiendaId).nombre) + (e.nota ? "<small class='sub'>" + esc(e.nota) + "</small>" : "") + "</td><td>" +
+          e.lineas.map(function (l) { return esc(producto(l.productoId).nombre) + " <b>× " + num(l.cantidad) + "</b>"; }).join("<br>") + "</td><td class='num'>" + num(u) + "</td><td>" + insigniasRecepcion(e) + "</td>" +
+          '<td class="acciones"><button class="btn btn-mini" data-accion="comprobante" data-id="' + e.id + '">Comprobante</button>' +
+          (cerr ? '<span class="estado estado-gris">' + ico("i-candado") + "Cerrada</span>" : puede("movimientos") ?
             '<button class="btn btn-mini" data-accion="editar" data-id="' + e.id + '">' + ico("i-editar") + 'Corregir</button><button class="btn btn-mini btn-peligro" data-accion="eliminar" data-id="' + e.id + '" aria-label="Eliminar entrega">' + ico("i-borrar") + "</button>" : "") + "</td></tr>";
       }).join("") + "</tbody></table></div>" :
       vacio("i-entregas", "Sin entregas en este período", filtro.tienda ? "Esta tienda no tiene entregas registradas en " + esc(periodo(per).nombre) + "." : "Registra la primera entrega del período.", "")) + "</div>";
 
-    return encabezado("Entregas", "Mercadería que sale de la distribuidora hacia cada tienda en consignación.") + avisoCerrado() + '<div class="dos-columnas">' + form + tabla + "</div>";
+    return encabezado("Entregas", esPerfil("tienda") ? "Mercadería que la distribuidora entregó en tu tienda. Abre el comprobante para confirmar la recepción." : "Mercadería que sale de la distribuidora hacia cada tienda en consignación.") + avisoCerrado() + '<div class="dos-columnas">' + form + tabla + "</div>";
   };
+  function insigniasRecepcion(e) {
+    var h = [];
+    if (e.excepcion) {
+      var ex = { pendiente: ["Excepción GPS · por revisar", "estado-alerta"], aprobada: ["Excepción GPS · aprobada", "estado-revisada"], observada: ["Excepción GPS · observada", "estado-pendiente"] }[e.excepcion.estado];
+      h.push('<span class="estado ' + ex[1] + '">' + ex[0] + "</span>");
+    } else if (e.gps) h.push('<span class="estado estado-ok">En rango · ' + num(e.gps.distancia) + " m</span>");
+    if (e.confirmada) h.push('<span class="estado estado-ok">' + ico("i-ok") + "Confirmada por la tienda</span>");
+    else if (e.recibidoPor) h.push('<span class="estado estado-gris">Sin confirmar</span>');
+    return h.join(" ") || "—";
+  }
   function lineaHtml(l, i) {
     return '<div class="linea" data-i="' + i + '"><select name="producto" data-campo="linea-' + i + '" aria-label="Producto">' + opcionesProductos(l.productoId) + "</select>" +
-      '<input name="cantidad" data-campo="cantidad-' + i + '" type="number" min="1" max="10000" step="1" inputmode="numeric" aria-label="Cantidad" value="' + (l.cantidad || "") + '" placeholder="0">' +
-      '<button type="button" class="btn-icono" data-accion="quitar-linea" aria-label="Quitar producto">' + ico("i-cerrar") + "</button></div>";
+      '<button type="button" class="btn-icono" data-accion="quitar-linea" aria-label="Quitar producto">' + ico("i-cerrar") + "</button>" +
+      '<label class="linea-campo"><span>Cantidad *</span><input name="cantidad" data-campo="cantidad-' + i + '" type="number" min="1" max="10000" step="1" inputmode="numeric" value="' + (l.cantidad || "") + '" placeholder="0"></label>' +
+      '<label class="linea-campo"><span>Vence el lote (opcional)</span><input name="vencimiento" data-campo="vencimiento-' + i + '" type="date" value="' + esc(l.vencimiento || "") + '"></label></div>';
   }
   function reglaFecha(form) {
     return [form.fecha, function (el) { return RCV.fecha(el.value, filtro.periodo, periodo(filtro.periodo).nombre); }];
   }
+
+  // ---------- Firma táctil (canvas con pointer events) ----------
+  function prepararFirma(caja) {
+    var lienzo = $("canvas", caja), ctx = lienzo.getContext("2d"), dibujando = false, ultimo = null;
+    var firmado = false;
+    function ajustar() {
+      var r = lienzo.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+      lienzo.width = Math.max(1, Math.round(r.width * dpr)); lienzo.height = Math.max(1, Math.round(r.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#1F3D35";
+      firmado = false; caja.classList.remove("firmada");
+    }
+    function punto(e) { var r = lienzo.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    lienzo.addEventListener("pointerdown", function (e) {
+      e.preventDefault(); dibujando = true; ultimo = punto(e);
+      try { lienzo.setPointerCapture(e.pointerId); } catch (x) { /* sin captura */ }
+      ctx.beginPath(); ctx.arc(ultimo.x, ultimo.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = "#1F3D35"; ctx.fill();
+    });
+    lienzo.addEventListener("pointermove", function (e) {
+      if (!dibujando) return;
+      e.preventDefault();
+      var p = punto(e);
+      ctx.beginPath(); ctx.moveTo(ultimo.x, ultimo.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      ultimo = p;
+      if (!firmado) { firmado = true; caja.classList.add("firmada"); }
+    });
+    function fin() {
+      if (!dibujando) return;
+      dibujando = false;
+      if (firmado) caja.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    lienzo.addEventListener("pointerup", fin);
+    lienzo.addEventListener("pointercancel", fin);
+    ajustar();
+    return {
+      firmado: function () { return firmado; },
+      borrar: function () { ajustar(); caja.dispatchEvent(new Event("input", { bubbles: true })); },
+      // Se guarda una copia reducida (máx. 480 px de ancho) para no llenar el almacenamiento del navegador.
+      imagen: function () {
+        if (!firmado) return "";
+        var w = Math.min(480, lienzo.width), h = Math.round(lienzo.height * w / lienzo.width);
+        var c = document.createElement("canvas"); c.width = w; c.height = h;
+        var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(lienzo, 0, 0, w, h);
+        return c.toDataURL("image/png");
+      }
+    };
+  }
+
+  // ---------- Ubicación del dispositivo ----------
+  function obtenerUbicacion(ok, falla) {
+    if (!navigator.geolocation) { falla("Este dispositivo no permite obtener la ubicación."); return; }
+    navigator.geolocation.getCurrentPosition(function (p) {
+      ok({ lat: p.coords.latitude, lng: p.coords.longitude, precision: p.coords.accuracy, simulada: false });
+    }, function (err) {
+      falla(err && err.code === 1 ? "No diste permiso para usar la ubicación." : "No se pudo obtener la ubicación (sin señal GPS).");
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  }
+  function distanciaTxt(m) { return m === null || m === undefined ? "—" : (m >= 1000 ? num(Math.round(m / 100) / 10) + " km" : num(m) + " m"); }
+
   ENLACES.entregas = function (v) {
     var form = $("#form-entrega", v);
     vigilarCierre(form);
+    var firma = null, ubic = null, gpsError = "";
+    var nueva = !!(form && !edicion.entregas);
+    function enRango() {
+      if (!ubic || !form.tiendaId.value) return false;
+      var dist = RC.distancia(ubic, tienda(form.tiendaId.value));
+      return dist !== null && dist <= RC.RANGO_ENTREGA;
+    }
+    function pintarGps() {
+      if (!nueva) return;
+      var out = $("#gps-estado", v), t = form.tiendaId.value ? tienda(form.tiendaId.value) : null;
+      if (ubic) {
+        var dist = t ? RC.distancia(ubic, t) : null;
+        out.className = "gps-estado " + (dist !== null && dist <= RC.RANGO_ENTREGA ? "gps-ok" : "gps-fuera");
+        out.innerHTML = !t ? "Ubicación capturada (±" + Math.round(ubic.precision) + " m). Elige la tienda para medir la distancia." :
+          dist === null ? "La tienda no tiene coordenadas registradas: la entrega quedará como Excepción GPS." :
+          "Estás a <b>" + distanciaTxt(dist) + "</b> de " + esc(t.nombre) + " · " + (dist <= RC.RANGO_ENTREGA ? "<b>dentro del rango</b>" : "<b>fuera del rango</b> (máx. " + RC.RANGO_ENTREGA + " m)") +
+          (ubic.simulada ? " · ubicación simulada" : "") +
+          ' · <a href="https://www.google.com/maps?q=' + ubic.lat + "," + ubic.lng + '" target="_blank" rel="noopener">ver en el mapa</a>';
+      } else if (gpsError) { out.className = "gps-estado gps-fuera"; out.textContent = gpsError + " Puedes registrar la entrega con justificación."; }
+      $("#grupo-just", v).hidden = enRango() || (!ubic && !gpsError);
+    }
+    if (nueva) {
+      firma = prepararFirma($(".firma-caja", v));
+      form.tiendaId.addEventListener("change", pintarGps);
+    }
     if (form) validador(form, function () {
       var reglas = [reglaFecha(form), [form.tiendaId, function (el) { return RCV.seleccion(el.value, "la tienda"); }]];
       var filas = $$(".linea", form);
       filas.forEach(function (row, i) {
-        var sel = $('[name="producto"]', row), cant = $('[name="cantidad"]', row);
+        var sel = $('[name="producto"]', row), cant = $('[name="cantidad"]', row), venc = $('[name="vencimiento"]', row);
         // Las claves de los campos siguen la posición actual de la línea.
-        sel.dataset.campo = "linea-" + i; cant.dataset.campo = "cantidad-" + i;
+        sel.dataset.campo = "linea-" + i; cant.dataset.campo = "cantidad-" + i; venc.dataset.campo = "vencimiento-" + i;
         reglas.push([sel, function (el) {
           if (!el.value) return "Selecciona el producto.";
           var repetido = filas.slice(0, i).some(function (r) { return $('[name="producto"]', r).value === el.value; });
           return repetido ? "El producto está repetido. Suma las cantidades en una sola línea." : "";
         }]);
         reglas.push([cant, function (el) { return RCV.cantidad(el.value); }]);
+        reglas.push([venc, function (el) { return RCV.vencimiento(el.value, form.fecha.value); }]);
       });
       reglas.push([form.nota, function (el) { return RCV.nota(el.value); }]);
+      if (nueva) {
+        reglas.push([form.recibidoPor, function (el) { return RCV.nombrePersona(el.value, { etiqueta: "el nombre de quien recibe" }); }]);
+        reglas.push([$(".firma-caja", form), function () { return firma.firmado() ? "" : "Pide a quien recibe que firme en el recuadro."; }]);
+        if (!enRango()) reglas.push([form.justificacion, function (el) { $("#grupo-just", v).hidden = false; return RCV.justificacion(el.value); }]);
+      }
       return reglas;
     });
     v.addEventListener("click", function (e) {
       var b = e.target.closest("[data-accion]");
       if (!b) return;
       var a = b.dataset.accion;
+      if (a === "capturar-gps") {
+        var out = $("#gps-estado", v);
+        out.className = "gps-estado"; out.textContent = "Obteniendo tu ubicación…";
+        b.disabled = true;
+        obtenerUbicacion(function (p) { ubic = p; gpsError = ""; b.disabled = false; pintarGps(); },
+          function (msg) { ubic = null; gpsError = msg; b.disabled = false; pintarGps(); });
+      }
+      if (a === "borrar-firma" && firma) firma.borrar();
       if (a === "agregar-linea") {
         var cont = $(".lineas", v);
         var div = document.createElement("div");
@@ -654,17 +806,67 @@
         var f = new FormData(form);
         var lineas = $$(".linea", form).map(function (row) {
           var c = $('[name="cantidad"]', row).value;
-          return { productoId: $('[name="producto"]', row).value, cantidad: c === "" ? NaN : Number(c) };
+          return { productoId: $('[name="producto"]', row).value, cantidad: c === "" ? NaN : Number(c), vencimiento: $('[name="vencimiento"]', row).value };
         });
         var editando = !!edicion.entregas;
-        var r = RC.guardarEntrega({ id: edicion.entregas, fecha: f.get("fecha"), periodo: filtro.periodo, tiendaId: f.get("tiendaId"), lineas: lineas, nota: f.get("nota") });
+        var datos = { id: edicion.entregas, fecha: f.get("fecha"), periodo: filtro.periodo, tiendaId: f.get("tiendaId"), lineas: lineas, nota: f.get("nota") };
+        if (!editando) { datos.recibidoPor = f.get("recibidoPor"); datos.firma = firma.imagen(); datos.gps = ubic; datos.justificacion = f.get("justificacion"); }
+        var r = RC.guardarEntrega(datos);
         edicion.entregas = null;
         var u = r.lineas.reduce(function (a, l) { return a + l.cantidad; }, 0);
-        toast((editando ? "Entrega corregida: " : "Entrega guardada: ") + u + " u. para " + tienda(r.tiendaId).nombre + ".");
+        toast((editando ? "Entrega corregida: " : (r.excepcion ? "Entrega guardada como Excepción GPS: " : "Entrega guardada: ")) + u + " u. para " + tienda(r.tiendaId).nombre + ".", r.excepcion ? "error" : "ok");
         if (!filtro.tienda) cambiarFiltro({ tienda: r.tiendaId }); else render();
+        if (!editando) abrirComprobante(r.id);
       });
     });
   };
+
+  // ---------- Comprobante de entrega y WhatsApp ----------
+  function fechaHora(iso) { if (!iso) return "—"; var p = iso.split("T"); return fecha(p[0]) + (p[1] ? " " + p[1].slice(0, 5) : ""); }
+  // Celular 09XXXXXXXX -> 5939XXXXXXXX. Un teléfono fijo no tiene WhatsApp: se abre WhatsApp para elegir el contacto.
+  function numeroWhatsApp(tel) { var t = String(tel || "").replace(/\D/g, ""); return /^09\d{8}$/.test(t) ? "593" + t.slice(1) : ""; }
+  function enlaceWhatsApp(tel, texto) { return "https://wa.me/" + numeroWhatsApp(tel) + "?text=" + encodeURIComponent(texto); }
+  function textoComprobante(e) {
+    var t = tienda(e.tiendaId);
+    var l = ["*ReCuenta · Comprobante de entrega " + e.id + "*", "Tienda: " + t.nombre, "Fecha: " + fechaHora(e.registradoEn || e.fecha), "Productos:"];
+    e.lineas.forEach(function (x) { l.push("• " + producto(x.productoId).nombre + " × " + x.cantidad + (x.vencimiento ? " (vence " + fecha(x.vencimiento) + ")" : "")); });
+    l.push("Total: " + e.lineas.reduce(function (a, x) { return a + x.cantidad; }, 0) + " u.");
+    if (e.recibidoPor) l.push("Recibido por: " + e.recibidoPor);
+    if (e.gps) l.push("Ubicación: https://www.google.com/maps?q=" + e.gps.lat + "," + e.gps.lng + " (a " + distanciaTxt(e.gps.distancia) + " de la tienda)");
+    if (e.excepcion) l.push("Excepción GPS: " + e.justificacion);
+    if (e.registradoPor) l.push("Entregado por: " + e.registradoPor.nombre);
+    l.push("La cuenta que los dos ven igual.");
+    return l.join("\n");
+  }
+  function abrirComprobante(id) {
+    var e = RC.porId(RC.get().entregas, id);
+    if (!e) return;
+    var t = tienda(e.tiendaId);
+    var tot = e.lineas.reduce(function (a, x) { return a + x.cantidad; }, 0);
+    var html = '<h3 id="detalle-titulo">Comprobante de entrega ' + esc(e.id) + "</h3>" +
+      '<dl class="comprobante"><dt>Tienda</dt><dd>' + esc(t.nombre) + "<small class='sub'>" + esc(t.direccion || "") + "</small></dd>" +
+      "<dt>Fecha y hora</dt><dd>" + fechaHora(e.registradoEn || e.fecha) + "</dd>" +
+      "<dt>Entregado por</dt><dd>" + esc(e.registradoPor ? e.registradoPor.nombre : "—") + "</dd>" +
+      "<dt>Recibido por</dt><dd>" + esc(e.recibidoPor || "—") + "</dd>" +
+      "<dt>Ubicación</dt><dd>" + (e.gps ? '<a href="https://www.google.com/maps?q=' + e.gps.lat + "," + e.gps.lng + '" target="_blank" rel="noopener">Ver en el mapa</a> · a ' + distanciaTxt(e.gps.distancia) + " de la tienda" + (e.gps.precision ? " (±" + e.gps.precision + " m)" : "") : "Sin GPS") + "</dd>" +
+      "<dt>Estado</dt><dd>" + insigniasRecepcion(e) + (e.excepcion ? "<small class='sub'>Justificación: " + esc(e.justificacion) + "</small>" + (e.excepcion.nota ? "<small class='sub'>Revisión de " + esc(e.excepcion.revisadoPor) + ": " + esc(e.excepcion.nota) + "</small>" : "") : "") +
+      (e.confirmada ? "<small class='sub'>Confirmada por " + esc(e.confirmada.por) + " el " + fechaHora(e.confirmada.en) + "</small>" : "") + "</dd></dl>" +
+      '<table class="tabla tabla-mini"><thead><tr><th>Producto</th><th class="num">Cantidad</th><th>Vence</th></tr></thead><tbody>' +
+      e.lineas.map(function (x) { return "<tr><td>" + esc(producto(x.productoId).nombre) + "</td><td class='num'>" + num(x.cantidad) + "</td><td>" + (x.vencimiento ? fecha(x.vencimiento) : "—") + "</td></tr>"; }).join("") +
+      "</tbody><tfoot><tr><td>Total</td><td class='num'>" + num(tot) + "</td><td></td></tr></tfoot></table>" +
+      '<div class="firma-ver"><span class="sub">Firma</span>' + (e.firma ? '<img src="' + e.firma + '" alt="Firma de ' + esc(e.recibidoPor || "quien recibe") + '">' : '<p class="ayuda">Registro de ejemplo sin firma digital.</p>') + "</div>" +
+      '<div class="modal-acciones">' +
+      (esPerfil("tienda") && !e.confirmada ? '<button class="btn btn-primario" data-accion="confirmar-recepcion" data-id="' + e.id + '">' + ico("i-ok") + "Confirmar recepción</button>" : "") +
+      '<a class="btn btn-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoComprobante(e))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>" +
+      '<button class="btn btn-secundario" data-accion="cerrar-detalle">Cerrar</button></div>';
+    abrirDetalle(html);
+  }
+  function abrirDetalle(html) {
+    $("#detalle-cuerpo").innerHTML = html;
+    $("#detalle").hidden = false;
+    var b = $("#detalle .modal-acciones .btn"); if (b) b.focus();
+  }
+  function cerrarDetalle() { $("#detalle").hidden = true; $("#detalle-cuerpo").innerHTML = ""; }
 
   // ================= VENTAS y DEVOLUCIONES =================
   function vistaMovimiento(tipo) {
@@ -895,6 +1097,7 @@
     var acciones = '<div class="liq-acciones">' +
       '<button class="btn btn-secundario" data-accion="csv"' + (l.lineas.length ? "" : " disabled") + ">" + ico("i-descargar") + "Exportar CSV</button>" +
       '<button class="btn btn-secundario" data-accion="imprimir"' + (l.lineas.length ? "" : " disabled") + ">" + ico("i-imprimir") + "Imprimir / PDF</button>" +
+      (l.lineas.length ? '<a class="btn btn-whatsapp" id="liq-whatsapp" target="_blank" rel="noopener" href="' + esc(enlaceWhatsApp(t.telefono, textoLiquidacion(l))) + '">' + ico("i-whatsapp") + "Enviar por WhatsApp</a>" : "") +
       (puede("cerrar") && l.estado !== "Cerrada" ? '<button class="btn btn-primario" data-accion="cerrar-liq"' + (l.estado === "Lista para cerrar" && l.lineas.length ? "" : ' disabled title="' + esc(motivo) + '"') + ">" + ico("i-candado") + "Cerrar liquidación</button>" : "") +
       "</div>";
 
@@ -1043,6 +1246,23 @@
     $("#b-usuario", v).addEventListener("change", function (e) { filtroBitacora.usuario = e.target.value; render(); });
   };
 
+  // Resumen de la liquidación para WhatsApp: tienda, período, productos, subtotal, ajuste, total y diferencias.
+  function textoLiquidacion(l) {
+    function m(n) { return "$" + Number(n).toFixed(2).replace(".", ","); }
+    var x = ["*ReCuenta · Liquidación de consignación*", "Tienda: " + l.tienda, "Período: " + l.periodoNombre, "Estado: " + l.estado, "Productos vendidos:"];
+    l.lineas.forEach(function (p) { x.push("• " + p.producto + ": " + p.cantidad + " × " + m(p.precio) + " = " + m(p.subtotal)); });
+    x.push("Subtotal: " + m(l.subtotal));
+    x.push("Ajuste" + (l.ajustePct ? " (" + l.ajusteNombre + ", " + String(l.ajustePct).replace(".", ",") + " %)" : "") + ": " + (l.ajuste < 0 ? "−" : "") + m(Math.abs(l.ajuste)));
+    x.push("*Total a pagar: " + m(l.total) + "*");
+    if (l.diferencias.length) {
+      x.push("Diferencias por revisar (no se cobran):");
+      l.diferencias.forEach(function (d) { x.push("• " + d.producto + ": " + d.tipo.toLowerCase() + " de " + d.unidades + " u. (valor referencial " + m(d.valorReferencial) + ")" + (d.revisada ? " · revisada" : "")); });
+    } else x.push("Sin diferencias por revisar.");
+    if (l.pendientes.length) x.push("Pendiente de conteo: " + l.pendientes.map(function (p) { return p.producto; }).join(", "));
+    x.push("La cuenta que los dos ven igual.");
+    return x.join("\n");
+  }
+
   // ---------------- Exportación CSV (separador ; y punto decimal) ----------------
   function csvLiquidacion(l) {
     function c(v) { var s = String(v === null || v === undefined ? "" : v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
@@ -1123,6 +1343,12 @@
     if (a === "entrar") entrar(b.dataset.perfil);
     if (a === "entrar-como") entrarComo(b.dataset.id);
     if (a === "cerrar-selector") $("#selector-usuario").hidden = true;
+    if (a === "comprobante") abrirComprobante(b.dataset.id);
+    if (a === "cerrar-detalle") cerrarDetalle();
+    if (a === "confirmar-recepcion") {
+      try { RC.confirmarRecepcion(b.dataset.id); toast("Recepción confirmada. Queda registrada en la bitácora."); render(); abrirComprobante(b.dataset.id); }
+      catch (err) { toast(err.message, "error"); }
+    }
     if (a === "salir") confirmar("Cerrar sesión", "¿Quieres salir de ReCuenta? Tus registros quedan guardados en este navegador.", "Cerrar sesión").then(function (ok) { if (ok) salir(); });
     if (a === "menu") document.body.classList.toggle("menu-abierto");
     if (a === "restaurar") confirmar("Restaurar datos de ejemplo", "Se borrarán todos los cambios hechos en este navegador y se cargará de nuevo el caso de Milagro (entrega 100, ventas 70, devoluciones 25, conteo pendiente). ¿Continuar?", "Restaurar").then(function (ok) {
@@ -1139,7 +1365,12 @@
       irA("inicio");
     });
   });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("#selector-usuario").hidden) $("#selector-usuario").hidden = true; });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    if (!$("#selector-usuario").hidden) $("#selector-usuario").hidden = true;
+    if (!$("#detalle").hidden) cerrarDetalle();
+  });
+  $("#detalle").addEventListener("click", function (e) { if (e.target.id === "detalle") cerrarDetalle(); });
   $("#f-tienda").addEventListener("change", function (e) { cambiarFiltro({ tienda: e.target.value }); });
   $("#f-periodo").addEventListener("change", function (e) { cambiarFiltro({ periodo: e.target.value }); });
   window.addEventListener("hashchange", function () { if (usuario) { abierta = null; render(); $("#vista").focus({ preventScroll: true }); window.scrollTo(0, 0); } });

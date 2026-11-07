@@ -229,8 +229,39 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
 .disponible:empty { display: none; }
 .form-acciones { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .lineas { display: grid; gap: 8px; }
-.lineas-cab, .linea { display: grid; grid-template-columns: 1fr 110px 36px; gap: 8px; align-items: center; }
-.lineas-cab span { font-size: .8rem; color: var(--texto-suave); font-weight: 600; }
+.linea { display: grid; grid-template-columns: 1fr 1fr 44px; gap: 6px 8px; align-items: end; padding: 10px; border: 1px solid var(--verde-100); border-radius: 10px; background: var(--verde-50); }
+.linea select { grid-column: 1 / 3; }
+.linea .btn-icono { justify-content: center; min-height: 40px; }
+.linea-campo { display: grid; gap: 3px; font-size: .78rem; color: var(--texto-suave); font-weight: 600; }
+.linea-campo:last-child { grid-column: 2 / 4; }
+
+/* ---------- Recepción: GPS, firma y justificación ---------- */
+.recepcion { border: 1px solid var(--verde-200); border-radius: 10px; padding: 12px 14px 14px; margin: 0; display: grid; gap: 12px; min-width: 0; }
+.recepcion legend { font-weight: 700; color: var(--verde-900); padding: 0 6px; }
+.gps-fila { display: grid; gap: 8px; justify-items: start; }
+.gps-estado { margin: 0; font-size: .88rem; color: var(--texto-suave); }
+.gps-ok { color: #245043; background: #DDEEE3; padding: 8px 10px; border-radius: 8px; }
+.gps-fuera { color: #6D3A00; background: var(--ambar-claro); padding: 8px 10px; border-radius: 8px; }
+.firma-caja { position: relative; height: 160px; border: 2px dashed var(--verde-200); border-radius: 10px; background: #fff; }
+.firma-caja.invalido { border-color: var(--rojo); }
+.firma-lienzo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; border-radius: 8px; }
+.firma-guia { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; color: #A9B7B1; font-weight: 500; pointer-events: none; border-top: 1px solid #DCE5E1; margin: 0 24px; padding-top: 4px; font-size: .8rem; }
+.firma-caja.firmada .firma-guia { visibility: hidden; }
+.firma-borrar { justify-self: start; }
+.btn-whatsapp { background: #1F8F55; color: #fff; }
+.btn-whatsapp:hover { background: #17723F; }
+.modal-ancha { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow: auto; }
+.comprobante { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 12px 0; font-size: .92rem; }
+.comprobante dt { color: var(--texto-suave); font-weight: 600; }
+.comprobante dd { margin: 0; }
+.comprobante .estado { margin: 0 4px 4px 0; }
+.firma-ver { margin: 12px 0 16px; display: grid; gap: 4px; }
+.firma-ver img { max-width: 100%; height: auto; border: 1px solid var(--borde); border-radius: 8px; background: #fff; }
+.tarjeta-alerta { border-color: #EDD58C; background: #FFFCF0; }
+.tarjeta-alerta .tarjeta-titulo { color: #6D3A00; display: flex; align-items: center; gap: 6px; }
+.excepcion { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid #F1E3B5; }
+.excepcion-cab { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .92rem; }
+.excepcion-just { margin: 0; font-style: italic; color: #5A4300; }
 .form > .btn-mini { justify-self: start; }
 .form-conteo { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
 .form-conteo input { width: 76px; padding: 6px 8px; text-align: right; }
@@ -294,6 +325,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--verde-600); outl
   .kpi-valor { font-size: 1.35rem; }
   .flujo { grid-template-columns: 1fr 1fr; }
   .rejilla-2 { grid-template-columns: 1fr; }
+  .comprobante { grid-template-columns: 1fr; gap: 2px; }
+  .comprobante dd { margin-bottom: 8px; }
+  .modal-acciones { flex-wrap: wrap; }
+  .modal-acciones .btn { flex: 1 1 100%; }
   .contexto { gap: 6px; }
   .ctx-campo { flex: 1 1 100%; }
   .ctx-campo select { max-width: none; flex: 1; }
