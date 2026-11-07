@@ -109,3 +109,5 @@ ReCuenta/
 ```
 
 Para cambiar los datos de ejemplo, edita `js/datos-demo.js` (sube `revision` en ese archivo y en `js/store.js`) y usa **Restaurar datos de ejemplo**.
+# R e c u e n t a  
+ 
